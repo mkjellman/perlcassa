@@ -1,0 +1,83 @@
+This is Perl module perlcassa.
+
+VERSION
+	v0.1
+
+INSTALLATION
+	perlcassa can be installed by doing the usual:
+		$ perl Makefile.PL
+		$ make
+		$ make install
+
+DESCRIPTION
+	perlcassa is a native Perl client for interfacing with Apache Cassandra. It is essentially an API for Apache Thrift. It intelligently deals with CompositeType columns and ValidationClasses and encodes and packs them appropriately for the columnfamily specified.
+
+Note: This package does not support SuperColumns. Please look into CompositeType Comparators instead.
+
+DOCUMENTATION
+	Documentation is light at this time and will be improved in the next version. For now please refer to the documentation available in POD format or look through the examples in the examples folder.
+
+SYNOPOSIS
+	my $obj = new perlcassa(
+                'columnfamily'  => 'myCF',
+                'keyspace'      => 'myKeyspace',
+                'hosts'         => ['host1.cassandra.local', 'host2.cassandra.local', 'host3.cassandra.local'],
+                
+                #optional
+                'write_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
+                'read_consistency_level'  => Cassandra::ConsistencyLevel::QUORUM,
+                'port'                    => '9160'
+        );
+
+        my %composite = ('values' => ['name_pt1', 'name_pt2']);
+
+        $obj->insert(
+                'key'           => 'myKey',
+                'columnname'    => \%composite,
+                'value'         => 'myVal'
+        );
+
+        $obj->get(
+                'key'           => 'myKey',
+                'columnname'    => 'myColumn'
+        );
+        
+        $obj->get_slice(
+                'key'           => 'myKey',
+                'start'         => ['name_pt1'],
+                'finish'        => ['name_pt2'],
+        );
+
+        my %bulk = (
+                #value => [columnname]
+                'test'  => ['name_pt1', 'name_pt2'],
+                'test2' => ['name_pt3', 'name_pr4']
+        );
+
+        $obj->bulk_insert(
+                'key'     => 'testkey'
+                'columns' => \%bulk
+        ); 
+
+TODO
+	* allow users to override automatic detection of validation/comparator types
+	* better documentation
+	* better handling thrift exceptions to try from another provided Cassandra instance/host automagically
+	* general performance optimizations
+	* auto retry failures where the node is up when the client is created but there is an exception such as a timeout on insert
+
+
+COPYRIGHT & LICENSE
+	Copyright 2012 Michael Kjellman
+
+	Licensed under the Apache License, Version 2.0 (the "License");
+	you may not use this file except in compliance with the License.
+	You may obtain a copy of the License at
+
+	  http://www.apache.org/licenses/LICENSE-2.0
+
+	Unless required by applicable law or agreed to in writing, software
+	distributed under the License is distributed on an "AS IS" BASIS,
+	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+	See the License for the specific language governing permissions and
+	limitations under the License.	
