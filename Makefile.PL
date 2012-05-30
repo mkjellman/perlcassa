@@ -25,6 +25,7 @@ WriteMakefile(
 		'Thrift::XS' => '0',
 		'ResourcePool' => '0',
 		'ResourcePool::LoadBalancer' => '0',
+		'Class::Accessor' => '0',
 		'Time::HiRes'	=> '0'
 	}
 );
