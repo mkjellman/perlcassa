@@ -31,7 +31,7 @@ sub get_server() {
 			print STDERR "[DEBUG] Using server [$self->{server}->{ARGUMENT}]\n";
 		}
 
-		return $self->{server}->{ARGUMENT};
+		return $self->{server};
 	} else {
 		die('[ERROR] Unable to connect to any of the provided Cassandra hosts.');
 	}
@@ -43,7 +43,7 @@ sub get_server() {
 sub _load_loadbalancer_hosts() {
 	my $self = shift;
 
-	$self->{loadbalancer} = ResourcePool::LoadBalancer->new("Cassandra", Policy => "LeastUsage", "MaxTry" => 3);
+	$self->{loadbalancer} = ResourcePool::LoadBalancer->new("Cassandra", Policy => "LeastUsage", "MaxTry" => 2);
 
 	foreach my $host (@{$self->{hosts}}) {
 		my $factory = ResourcePool::Factory->new($host);
@@ -75,24 +75,35 @@ sub close_conn() {
 sub setup() {
 	my ($self, $keyspace) = @_;
 
-	while(!defined($self->{server})) {
-		my $server = $self->perlcassa::Client::get_server();
+	if(!defined($self->{server})) {
+		my $connected = 0;
+		my $attempts = 0;
+		while ($connected != 1) {
+			my $serverobj = $self->perlcassa::Client::get_server();
+			my $serveraddr = $serverobj->{ARGUMENT};
 
-		$self->{socket} = new Thrift::Socket($server, $self->{port});
-		$self->{transport} = new Thrift::FramedTransport($self->{socket},1024,1024);
-		$self->{protocol} = new Thrift::XS::BinaryProtocol($self->{transport});
-		$self->{client} = new Cassandra::CassandraClient($self->{protocol});
+			$self->{socket} = new Thrift::Socket($serveraddr, $self->{port});
+			$self->{transport} = new Thrift::FramedTransport($self->{socket},1024,1024);
+			$self->{protocol} = new Thrift::XS::BinaryProtocol($self->{transport});
+			$self->{client} = new Cassandra::CassandraClient($self->{protocol});
 
-		eval {
-			$self->perlcassa::Client::get_server();
-			$self->{transport}->open();
-		};
+			if ($attempts > 2) {
+				die('[ERROR] Unable to connect to a host for this request');
+			}
 
-		if ($@) {
-			print STDERR "[WARNING] unable to connect to host $server, trying next available host\n";
+			eval {
+				$self->{transport}->open();
+			};
 
-			$self->{loadbalancer}->fail($self->{server});
-			$self->{server} = undef;
+			if ($@) {
+				print STDERR "[WARNING] unable to connect to host $serveraddr, trying next available host\n";
+
+				$self->{loadbalancer}->fail($serverobj);
+				$self->{server} = undef;
+				$attempts++;
+			} else {
+				$connected = 1;
+			}
 		}
 	}
 
@@ -112,11 +123,23 @@ sub _refresh_cf_info() {
 	my $current_keyspace = $opts{keyspace} || $self->{keyspace_inuse};
 
 	if (defined($current_cf)) {
-		if ($self->{debug} == 1) {
-			print STDERR "[DEBUG] refreshing column family information from Cassandra\n";
+		my $validators;
+		# if we have a manual hash provided in the object, use that instead of fetching it from the cluster
+		if (defined($self->{validators})) {
+			if ($self->{debug} == 1) {
+				print STDERR "[DEBUG] using manually provided column family validation information\n";
+			}
+
+			$validators = $self->{validators};			
+		} else {
+			# otherwise - fetch the validators
+			if ($self->{debug} == 1) {
+				print STDERR "[DEBUG] refreshing column family information from Cassandra\n";
+			}
+
+			$validators = $self->get_validators(columnfamily => $current_cf, keyspace => $current_keyspace);
 		}
 
-		my $validators = $self->get_validators(columnfamily => $current_cf, keyspace => $current_keyspace);
 		my %validators = %$validators;
 
 		#refresh key validation class for this connected client

@@ -6,7 +6,7 @@ perlcassa - Perl Client for Apache Cassandra
 
 =head1 VERSION
 
-v0.1
+v0.02
 
 =head1 SYNOPSIS
 
@@ -81,7 +81,6 @@ Creates a new Apache Cassandra Perl Client
 =back
 =head1 TODO
 
-* allow users to override automatic detection of validation/comparator types
 * better documentation
 * better handling thrift exceptions to try from another provided Cassandra instance/host automagically
 * general performance optimizations
@@ -161,7 +160,9 @@ sub new() {
 		comparators => undef,
 		read_consistency_level => $opt{read_consistency_level} || Cassandra::ConsistencyLevel::ONE,
 		write_consistency_level => $opt{write_consistency_level} || Cassandra::ConsistencyLevel::ONE,
-		debug => $opt{debug} || 0
+		debug => $opt{debug} || 0,
+		timeout => $opt{timeout} || undef,
+		validators => $opt{validators} || undef
 	}, $class;
 
 	return $self;
@@ -265,7 +266,15 @@ sub execute() {
 
 	my $client = $self->{client};
 
-	my $return = $client->execute_cql_query($query, Cassandra::Compression::NONE);
+	my $return;
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "CQL Query Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$return = $client->execute_cql_query($query, Cassandra::Compression::NONE);
+		alarm($alarm);
+	} else {
+		$return = $client->execute_cql_query($query, Cassandra::Compression::NONE);
+	}
 	
 	return $return;
 }
@@ -392,14 +401,33 @@ sub get_validators() {
 ##########################################################################
 sub insert() {
 	my ($self, %opts) = @_;
-	#validate this is not an add
+	#TODO: validate this is not an add
 
+	if (!defined($opts{key})) {
+		die('[ERROR] Key must be defined');
+	}
+
+	if (!defined($opts{columnname})) {
+		die('[ERROR] Columnname must be defined');
+	}
+
+	if (!defined($opts{value})) {
+		warn('[WARN] Value was not defined');
+	}
+	
 	eval {	
-		$self->_call("insert", %opts);
+		if (defined($self->{timeout})) {
+			local $SIG{ALRM} = sub { die "Insert timed out"; };
+			my $alarm = alarm($self->{tiemout});
+			$self->_call("insert", %opts);
+			alarm($alarm);
+		} else {
+			$self->_call("insert", %opts);
+		}
 	};
 
 	if ($@) {
-		#die('[ERROR] Insert was unsucessful');
+		die('[ERROR] Insert was unsucessful');
 	}
 }
 
@@ -409,8 +437,15 @@ sub insert() {
 ##########################################################################
 sub remove() {
 	my ($self, %opts) = @_;
-	
-	$self->_call("remove", %opts);
+
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Remove timed out"; };
+		my $alarm = alarm($self->{timeout});
+		$self->_call("remove", %opts);
+		alarm($alarm);
+	} else {	
+		$self->_call("remove", %opts);
+	}
 }
 
 ##########################################################################
@@ -435,7 +470,13 @@ sub add() {
 		$opts{counter} = 1;
 	}
 
-	$self->_call("add", %opts);
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Add Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$self->_call("add", %opts);
+	} else {
+		$self->_call("add", %opts);
+	}
 }
 
 ###########################################################################
@@ -576,7 +617,14 @@ sub bulk_insert() {
 		push (@mutations, $mutation);
 	}
 
-	$client->batch_mutate( { $key => { $columnfamily => \@mutations }}, $consistencylevel);
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Batch Mutate Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$client->batch_mutate( { $key => { $columnfamily => \@mutations }}, $consistencylevel);
+		alarm($alarm);
+	} else {
+		$client->batch_mutate( { $key => { $columnfamily => \@mutations }}, $consistencylevel);
+	}
 }
 
 
@@ -591,7 +639,16 @@ sub _get_column() {
 	my $column_path = new Cassandra::ColumnPath();
 	$column_path->{column_family} = $column_family;
 	$column_path->{column} = $column;
-	my $res = $client->get($key, $column_path, $consistencylevel);
+
+	my $res;
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Get Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$res = $client->get($key, $column_path, $consistencylevel);
+		alarm($alarm);
+	} else {
+		$res = $client->get($key, $column_path, $consistencylevel);
+	}
 
 	return $res;
 }
@@ -643,6 +700,16 @@ sub _pack_values() {
 	my ($self, $composite, $columnfamily, $type) = @_;
 	my %composite = %$composite;
 
+	# if a array of validation classes has been passed in with the name hash, use that, otherwise, determine it from the keyspace definition
+	my @validationComparators;	
+	if (defined($type) && $type eq 'key') {
+		@validationComparators = @{$self->{key_validation}{$columnfamily}};
+	} elsif (defined($type) && $type eq 'value') {
+		@validationComparators = @{$self->{value_validation}{$columnfamily}};
+	} else {
+		@validationComparators = @{$self->{comparators}{$columnfamily}};
+	}
+
 	# if this is a query string the logic is a bit different
 	if (defined($composite{start}) && defined($composite{finish})) {
 		my ($startslice, $finishslice);
@@ -656,17 +723,22 @@ sub _pack_values() {
 		#first take care of the start query pack
 		foreach my $val (@{$composite{'start'}}) {
 			my $packstring = $val;
-
 			$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
-			
-			push(@startpackoptions, 'n');
-			push(@startpackoptions, 'a*');
-			push(@startpackoptions, 'C');
 
-			my $length = length($packstring);
-			push(@startpackvalues, $length);
-			push(@startpackvalues, $packstring);
-			push(@startpackvalues, 0);
+			if (scalar(@validationComparators) == 1) {
+				push(@startpackoptions, 'a*');
+				push(@startpackvalues, $packstring);	
+			} else {
+				push(@startpackoptions, 'n');
+				push(@startpackoptions, 'a*');
+				push(@startpackoptions, 'C');
+
+				my $length = length($packstring);
+				push(@startpackvalues, $length);
+				push(@startpackvalues, $packstring);
+				push(@startpackvalues, 0);
+			}
+			
 			
 			$i++;
 		}
@@ -681,19 +753,24 @@ sub _pack_values() {
 			my $packstring = $val;
 			$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
 
-			push(@finishpackoptions, 'n');
-			push(@finishpackoptions, 'a*');
-			push(@finishpackoptions, 'C');
-
-			my $length = length($packstring);
-			push(@finishpackvalues, $length);
-			push(@finishpackvalues, $packstring);
-
-			# default to the last element being GREATER_THAN_EQUAL
-			if ($numofelements == 1 || $j >= $numofelements) {
-				push(@finishpackvalues, 1);
+			if (scalar(@validationComparators) == 1) {
+				push(@finishpackoptions, 'a*');
+				push(@finishpackoptions, $packstring); 
 			} else {
-				push(@finishpackvalues, 0);
+				push(@finishpackoptions, 'n');
+				push(@finishpackoptions, 'a*');
+				push(@finishpackoptions, 'C');
+
+				my $length = length($packstring);
+				push(@finishpackvalues, $length);
+				push(@finishpackvalues, $packstring);
+
+				# default to the last element being GREATER_THAN_EQUAL
+				if ($numofelements == 1 || $j >= $numofelements) {
+					push(@finishpackvalues, 1);
+				} else {
+					push(@finishpackvalues, 0);
+				}
 			}
 
 			$i++;
@@ -715,15 +792,6 @@ sub _pack_values() {
 	my @packvalues;
 	my $i = 0;
 
-	# if a array of validation classes has been passed in with the name hash, use that, otherwise, determine it from the keyspace definition
-	my @validationComparators;	
-	if (defined($type) && $type eq 'key') {
-		@validationComparators = @{$self->{key_validation}{$columnfamily}};
-	} elsif (defined($type) && $type eq 'value') {
-		@validationComparators = @{$self->{value_validation}{$columnfamily}};
-	} else {
-		@validationComparators = @{$self->{comparators}{$columnfamily}};
-	}
 
 	foreach my $validationtype (@validationComparators) {
 		my $value = @{$composite{'values'}}[$i];
@@ -940,6 +1008,12 @@ sub _unpack_columnname_values() {
 		$columnfamily = $self->{columnfamily};
 	}
 
+	# if the columnname isn't composite, just return the string
+	# this will skip the rest of the processing
+	if (scalar(@{$self->{comparators}{$columnfamily}}) == 1) {
+		return $composite;
+	}
+
 	my $unpackstr = 'n';
 	my @ret = ();
 	my $term = 0;
@@ -1035,7 +1109,16 @@ sub get_slice() {
 	$slice_range->{finish} = $$slicefinish;
 	my $predicate = new Cassandra::SlicePredicate();
 	$predicate->{slice_range} = $slice_range;
-	my $res = $client->get_slice($key, $column_parent, $predicate, $consistencylevel);
+
+	my $res;
+	if(defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Get Slice Timed Out"; };
+		alarm($self->{timeout});
+		$res = $client->get_slice($key, $column_parent, $predicate, $consistencylevel);
+		alarm($self->{timeout});
+	} else {
+		$res = $client->get_slice($key, $column_parent, $predicate, $consistencylevel);
+	}
 
 	my @return;
 	foreach my $result (@{$res}) {
@@ -1045,10 +1128,10 @@ sub get_slice() {
 			if ($expiretime < time && $opts{return_expired} != 1) {
 				next;
 			}
-		} else {
-			# all normal inserts should have a timestamp or ttl -- let's skip those that don't by default
-			next;
 		}
+
+		# if we got back a record without a timestamp something is wrong, le's just skip it by default
+		next if (!defined($result->{column}{timestamp}));
 
 		my @names = $self->_unpack_columnname_values($result->{column}->{name});
 		my $value = $self->_unpack_value(packedstr => $result->{column}->{value}, mode => 'value_validation');
@@ -1173,7 +1256,15 @@ sub _call_get_range_slices() {
 	$key_range->{end_key} = $opts{key_end};
 	$key_range->{count} = $opts{key_max_count};
 
-	my $res = $client->get_range_slices($column_parent, $predicate, $key_range, $opts{consistencylevel});
+	my $res;
+	if(defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Get Range Slices Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$res = $client->get_range_slices($column_parent, $predicate, $key_range, $opts{consistencylevel});
+		alarm($alarm);
+	} else {
+		$res = $client->get_range_slices($column_parent, $predicate, $key_range, $opts{consistencylevel});
+	}
 }
 
 # This logic will not preserve the order the keys were returned in from Cassandra 
@@ -1206,7 +1297,15 @@ sub get_paged_slice() {
 			$key_range->{count} = $maxcount;
 		}
 
-		my $res = $client->get_paged_slice($column_family, $key_range, $tmpcol_name, $self->{consistencylevel});
+		my $res;
+		if (defined($self->{timeout})) {
+			local $SIG{ALRM} = sub { die "Get Paged Slice Timed Out"; };
+			my $alarm = alarm($self->{timeout});
+			$res = $client->get_paged_slice($column_family, $key_range, $tmpcol_name, $self->{consistencylevel});
+			alarm($alarm);
+		} else {
+			$res = $client->get_paged_slice($column_family, $key_range, $tmpcol_name, $self->{consistencylevel});
+		}
 
 		foreach my $key (@{$res}) {
 			my $keyname = $key->{key};
@@ -1264,7 +1363,16 @@ sub get_column_count() {
 	my $predicate = new Cassandra::SlicePredicate();
 	$predicate->{slice_range} = $slice_range;
 
-	my $count = $client->get_count($key, $column_parent, $predicate, $consistencylevel);
+	my $count;
+	if(defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Get Count Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$count = $client->get_count($key, $column_parent, $predicate, $consistencylevel);
+		alarm($alarm);
+	} else {
+		$count = $client->get_count($key, $column_parent, $predicate, $consistencylevel);
+	}
+
 	return $count;  
 }
 
@@ -1297,7 +1405,16 @@ sub get_multicolumn_count() {
 	my $predicate = new Cassandra::SlicePredicate();
 	$predicate->{slice_range} = $slice_range;
 
-	my @count = $client->multiget_count($keys, $column_parent, $predicate, $consistencylevel);
+	my @count;
+
+	if(defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Multiget Count Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		@count = $client->multiget_count($keys, $column_parent, $predicate, $consistencylevel);
+		alarm($alarm);
+	} else {
+		@count = $client->multiget_count($keys, $column_parent, $predicate, $consistencylevel);
+	}
 
 	my %key_counts;
 	foreach my $hash (@count) {

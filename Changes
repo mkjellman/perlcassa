@@ -3,3 +3,10 @@ Change History
 
 0.01	May 8, 2012
 	- initial release
+
+0.02	June 4, 2012
+	- changes to the way Load Balancing is implemented
+	- fixes so that get_slice() works properly when the validator is not a composite
+	- added the ability to manually provide the validation classes
+	- general bug fixes
+	- added ability to set a timeout on thrift calls (set timeout => val in object creation)
