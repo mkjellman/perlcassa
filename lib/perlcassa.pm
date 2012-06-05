@@ -985,7 +985,7 @@ sub _unpack_value() {
 	
 	# we should have either had the validation class manually passed in or at least been able to get it directly from
 	# the cluster. if we failed at both of these we don't know how to unpack the given value so die()
-	if (!defined(@{$self->{$mode}{$columnfamily}})) {
+	if (!@{$self->{$mode}{$columnfamily}}) {
 		die('[ERROR] Was unable to retrieve the validation class for column family $columnfamily. Unable to unpack\n');
 	}
 
