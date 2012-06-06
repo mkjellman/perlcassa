@@ -115,7 +115,7 @@ limitations under the License.
 use strict;
 use warnings;
 
-our $VERSION = '0.1';
+our $VERSION = '0.02';
 
 use perlcassa::Client qw/setup close_conn client_setup/;
 
@@ -723,12 +723,17 @@ sub _pack_values() {
 		#first take care of the start query pack
 		foreach my $val (@{$composite{'start'}}) {
 			my $packstring = $val;
-			$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
 
-			if (scalar(@validationComparators) == 1) {
+			if (scalar(@{$composite{'start'}}) == 1 && $val eq '') {
+				# we don't want to pack anything if an empty string 
+				push(@startpackoptions, 'a*');
+				push(@startpackvalues, $packstring);	
+			} elsif (scalar(@validationComparators) == 1) {
+				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
 				push(@startpackoptions, 'a*');
 				push(@startpackvalues, $packstring);	
 			} else {
+				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
 				push(@startpackoptions, 'n');
 				push(@startpackoptions, 'a*');
 				push(@startpackoptions, 'C');
@@ -751,12 +756,17 @@ sub _pack_values() {
 		#next take care of the finish query (is the search inclusive?)
 		foreach my $val (@{$composite{'finish'}}) {
 			my $packstring = $val;
-			$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
 
-			if (scalar(@validationComparators) == 1) {
+			if (scalar(@{$composite{'finish'}}) == 1 && $val eq '') {
+				# we don't want to pack anything if an empty string
+				push(@finishpackoptions, 'a*');
+				push(@finishpackoptions, $packstring); 
+			} elsif (scalar(@validationComparators) == 1) {
+				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
 				push(@finishpackoptions, 'a*');
 				push(@finishpackoptions, $packstring); 
 			} else {
+				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
 				push(@finishpackoptions, 'n');
 				push(@finishpackoptions, 'a*');
 				push(@finishpackoptions, 'C');
@@ -936,6 +946,7 @@ sub _pack_values() {
 				die("[$value] is not an int");
 			}
 
+			# pack it as a 64-bit/8-byte int
 			my $hi = $value >> 32;
 			my $lo = $value & 0xFFFFFFFF;
 			my $tmpint = pack('N2', $hi, $lo);
@@ -944,16 +955,16 @@ sub _pack_values() {
 				push(@packoptions, 'a*');
 				push(@packvalues, $tmpint);
 			} else {			
+				my $length = length($tmpint);
 				push(@packoptions, 'n');
-				push(@packoptions, 'a*');
+				push(@packoptions, 'a'.$length);
 				push(@packoptions, 'C');
 
-				my $length = length($tmpint);
 				push(@packvalues, $length);
 				push(@packvalues, $tmpint);
 				push(@packvalues, 0);
-			}
 
+			}
 		} else {
 			#TODO: make this warning more useful
 			use Data::Dumper;
@@ -1014,14 +1025,26 @@ sub _unpack_columnname_values() {
 		return $composite;
 	}
 
+	if (defined($self->{debug})) {
+		# print out the hex dump of composite value
+		print STDERR join(" ", map({sprintf("%02x", ord($_)); } unpack("(a1)*",$composite))) . "\n";
+	}
+
 	my $unpackstr = 'n';
 	my @ret = ();
 	my $term = 0;
 	while (!$term) {
 		@ret = unpack($unpackstr, $composite);
-		my $chars = $ret[-1];
-		$unpackstr .= "a".$chars."C";
+		my $chars = $ret[-1]; # get the length of the first packed item
+		$unpackstr .= "a".$chars."W";
 		@ret = unpack($unpackstr, $composite);
+
+		if (defined($self->{debug})) {
+			if ($ret[-1] =! 0 || $ret[-1] =! undef) {
+				print STDERR "the column name seperator was not 0. it was [$ret[-1]]\n";
+			}
+		}
+		# a composite should be terminated with a 1 as a delimited, otherwise its a null padded character (0)  and we continue
 		$term = $ret[-1];
 	
 		# assume because this is a composite key that when the length is 0 we reached the end of the string
