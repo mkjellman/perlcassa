@@ -1040,7 +1040,7 @@ sub _unpack_columnname_values() {
 		@ret = unpack($unpackstr, $composite);
 
 		if (defined($self->{debug})) {
-			if ($ret[-1] =! 0 || $ret[-1] =! undef) {
+			if ($ret[-1] != 0 || !defined($ret[-1])) {
 				print STDERR "the column name seperator was not 0. it was [$ret[-1]]\n";
 			}
 		}
