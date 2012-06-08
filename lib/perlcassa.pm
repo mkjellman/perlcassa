@@ -1025,7 +1025,7 @@ sub _unpack_columnname_values() {
 		return $composite;
 	}
 
-	if (defined($self->{debug})) {
+	if ($self->{debug} == 1) {
 		# print out the hex dump of composite value
 		print STDERR join(" ", map({sprintf("%02x", ord($_)); } unpack("(a1)*",$composite))) . "\n";
 	}
@@ -1039,11 +1039,6 @@ sub _unpack_columnname_values() {
 		$unpackstr .= "a".$chars."W";
 		@ret = unpack($unpackstr, $composite);
 
-		if (defined($self->{debug})) {
-			if ($ret[-1] =! 0 || $ret[-1] =! undef) {
-				print STDERR "the column name seperator was not 0. it was [$ret[-1]]\n";
-			}
-		}
 		# a composite should be terminated with a 1 as a delimited, otherwise its a null padded character (0)  and we continue
 		$term = $ret[-1];
 	
