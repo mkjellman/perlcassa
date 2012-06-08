@@ -418,7 +418,7 @@ sub insert() {
 	eval {	
 		if (defined($self->{timeout})) {
 			local $SIG{ALRM} = sub { die "Insert timed out"; };
-			my $alarm = alarm($self->{tiemout});
+			my $alarm = alarm($self->{timeout});
 			$self->_call("insert", %opts);
 			alarm($alarm);
 		} else {
