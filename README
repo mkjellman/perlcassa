@@ -1,7 +1,7 @@
 This is Perl module perlcassa.
 
 VERSION
-	v0.1
+	v0.02
 
 INSTALLATION
 	perlcassa can be installed by doing the usual:
@@ -60,7 +60,6 @@ SYNOPOSIS
         ); 
 
 TODO
-	* allow users to override automatic detection of validation/comparator types
 	* better documentation
 	* better handling thrift exceptions to try from another provided Cassandra instance/host automagically
 	* general performance optimizations
