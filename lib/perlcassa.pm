@@ -1036,7 +1036,7 @@ sub _unpack_value() {
 
 	my $meta_sourced_validation_class;
 	# check if the name of this column has metadata and a validator
-	if (defined($self->{metadata_validation}{$columnfamily})) {
+	if (defined($self->{metadata_validation}{$columnfamily}) && defined(@{$name}[0])) {
 		my $mv_hashref = $self->{metadata_validation}{$columnfamily};
 		my %meta = %$mv_hashref;
 		if (defined($meta{@{$name}[0]})) {
