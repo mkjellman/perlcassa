@@ -126,6 +126,7 @@ use Cassandra::Types;
 use utf8;
 use Encode;
 use Time::HiRes qw ( time );
+use Math::BigInt;
 
 # hash that contains pack templates for ValidationTypes
 our %validation_map = (
@@ -378,6 +379,18 @@ sub get_validators() {
 	my @key_validators;
 	push (@key_validators, $key_validationclass);
 
+	# deal with validation if we have column metadata defined on column family
+	my $column_metadata = $columndesc{column_metadata};
+	my %metadata_validators;
+
+	if (defined($column_metadata)) {
+		foreach my $cmetadata (@{$column_metadata}) {
+			my $class = $cmetadata->{validation_class};
+			$class =~ s/org\.apache\.cassandra\.db\.marshal\.//g;
+			$metadata_validators{$cmetadata->{name}} = $class;
+		}
+	}
+
 	# get Default column value validator
 	my $default_columnvalidation = $columndesc{default_validation_class};
 	$default_columnvalidation =~ s/org\.apache\.cassandra\.db\.marshal\.//g;
@@ -386,9 +399,10 @@ sub get_validators() {
 	push (@column_validators, $key_validationclass);
 
 	my %validators = (
-		'column' => \@column_validators,
-		'key'	 => \@key_validators,
-		'comparator' => \@types
+		'column'	=> \@column_validators,
+		'key'		=> \@key_validators,
+		'comparator'	=> \@types,
+		'metadata'	=> \%metadata_validators	
 	);
 
 	return \%validators;
@@ -424,10 +438,12 @@ sub insert() {
 		} else {
 			$self->_call("insert", %opts);
 		}
+
+		close_conn();
 	};
 
 	if ($@) {
-		die('[ERROR] Insert was unsucessful');
+		die("[ERROR] Insert was unsucessful $@");
 	}
 }
 
@@ -438,14 +454,23 @@ sub insert() {
 sub remove() {
 	my ($self, %opts) = @_;
 
-	if (defined($self->{timeout})) {
-		local $SIG{ALRM} = sub { die "Remove timed out"; };
-		my $alarm = alarm($self->{timeout});
-		$self->_call("remove", %opts);
-		alarm($alarm);
-	} else {	
-		$self->_call("remove", %opts);
+	eval {
+		if (defined($self->{timeout})) {
+			local $SIG{ALRM} = sub { die "Remove timed out"; };
+			my $alarm = alarm($self->{timeout});
+			$self->_call("remove", %opts);
+			alarm($alarm);
+		} else {	
+			$self->_call("remove", %opts);
+		}
+
+		close_conn();
+	};
+
+	if ($@) {
+		die("[ERROR] Remove was unsuccessful $@");
 	}
+
 }
 
 ##########################################################################
@@ -470,12 +495,20 @@ sub add() {
 		$opts{counter} = 1;
 	}
 
-	if (defined($self->{timeout})) {
-		local $SIG{ALRM} = sub { die "Add Timed Out"; };
-		my $alarm = alarm($self->{timeout});
-		$self->_call("add", %opts);
-	} else {
-		$self->_call("add", %opts);
+	eval {
+		if (defined($self->{timeout})) {
+			local $SIG{ALRM} = sub { die "Add Timed Out"; };
+			my $alarm = alarm($self->{timeout});
+			$self->_call("add", %opts);
+		} else {
+			$self->_call("add", %opts);
+		}
+
+		close_conn();
+	};
+
+	if ($@) {
+		die("[ERROR] add failed. $@");
 	}
 }
 
@@ -924,7 +957,7 @@ sub _pack_values() {
 				die("[$value] does not fit inside a 32-bit int");
 			}
 
-			my $lo = $value & 0xFFFFFFFF;;
+			my $lo = $value & 0xFFFFFFFF;
 			my $tmpint = pack('N', $lo);
 
 			if (scalar(@validationComparators) == 1) {
@@ -985,6 +1018,7 @@ sub _unpack_value() {
 	my $columnfamily = $opts{columnfamily} || $self->{columnfamily};
 	my $packedstr = $opts{packedstr};
 	my $mode = $opts{mode};
+	my $name = $opts{name};
 
 	if (!defined($packedstr)) {
 		die('[ERROR] The value to decode must be defined');
@@ -1000,9 +1034,31 @@ sub _unpack_value() {
 		die('[ERROR] Was unable to retrieve the validation class for column family $columnfamily. Unable to unpack\n');
 	}
 
+	my $meta_sourced_validation_class;
+	# check if the name of this column has metadata and a validator
+	if (defined($self->{metadata_validation}{$columnfamily})) {
+		my $mv_hashref = $self->{metadata_validation}{$columnfamily};
+		my %meta = %$mv_hashref;
+		if (defined($meta{@{$name}[0]})) {
+			$meta_sourced_validation_class = $meta{@{$name}[0]};
+		}
+	}
+
 	my $unpackedstr;
-	foreach my $validator (@{$self->{$mode}{$columnfamily}}) {
-		$unpackedstr = unpack($validation_map{$validator}, $packedstr);
+	if (defined($meta_sourced_validation_class) && $meta_sourced_validation_class eq 'IntegerType') {
+		my $hexstr = '0x';
+		$hexstr .= join("", map( { sprintf("%02x", ord($_)); } unpack("(a1)*", $packedstr)));
+		my $dec = Math::BigInt->new($hexstr);
+
+		for (my $i = 0; $i <= scalar(@{$dec->{value}}); $i++) {
+			$unpackedstr .= pop(@{$dec->{value}});
+		}  
+	} elsif (defined($meta_sourced_validation_class) && $meta_sourced_validation_class ne 'IntegerType') {
+		$unpackedstr = unpack($validation_map{$meta_sourced_validation_class}, $packedstr);
+	} else {
+		foreach my $validator (@{$self->{$mode}{$columnfamily}}) {
+			$unpackedstr = unpack($validation_map{$validator}, $packedstr);
+		}
 	}
 	
 	return $unpackedstr;
@@ -1138,6 +1194,8 @@ sub get_slice() {
 		$res = $client->get_slice($key, $column_parent, $predicate, $consistencylevel);
 	}
 
+	close_conn();
+
 	my @return;
 	foreach my $result (@{$res}) {
 		# remove expired columns from returned results unless overridden by 'return_expired' in opts:
@@ -1152,7 +1210,7 @@ sub get_slice() {
 		next if (!defined($result->{column}{timestamp}));
 
 		my @names = $self->_unpack_columnname_values($result->{column}->{name});
-		my $value = $self->_unpack_value(packedstr => $result->{column}->{value}, mode => 'value_validation');
+		my $value = $self->_unpack_value(packedstr => $result->{column}->{value}, mode => 'value_validation', name => \@names);
 
 		my %resvalue = ( 
 			value => $value,

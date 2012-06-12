@@ -60,10 +60,12 @@ sub _load_loadbalancer_hosts() {
 sub close_conn() {
 	my $self = shift;
 
-	$self->{transport}->close();
-	$self->{loadbalancer}->free($self->{server});
-	$self->{server} = undef;
-	$self->{client} = undef;
+	if (defined($self->{transport})) {
+		$self->{transport}->close();
+		$self->{loadbalancer}->free($self->{server});
+		$self->{server} = undef;
+		$self->{client} = undef;
+	}
 
 	return 1;
 	
@@ -150,6 +152,9 @@ sub _refresh_cf_info() {
 	 
 		#refresh column value for this connected client
 		@{$self->{value_validation}{$current_cf}} = @{$validators{column}};
+
+		#refresh metadata validators (if they exist)
+		$self->{metadata_validation}{$current_cf} = $validators{metadata};
 	}
 }
 
