@@ -154,7 +154,7 @@ sub new() {
 		transport => undef,
 		protocol => undef,
 		socket => undef,
-		hosts => $opt{hosts},
+		hosts => $opt{hosts}, # user provided list of all cassandra servers potentially avaliable for reads or writes
 		port => $opt{port} || '9160',
 		keyspace => $opt{keyspace} || undef,
 		columnfamily => $opt{columnfamily} || undef,
@@ -163,8 +163,16 @@ sub new() {
 		write_consistency_level => $opt{write_consistency_level} || Cassandra::ConsistencyLevel::ONE,
 		debug => $opt{debug} || 0,
 		timeout => $opt{timeout} || undef,
-		validators => $opt{validators} || undef
+		validators => $opt{validators} || undef,
+		request_count => 0,
+		availablehosts => {},
+		failure_thread_running => 0,
+		max_retry => $opt{max_retry} || 2 # max number of times to try and connect for this request
 	}, $class;
+
+	# generate the inital randomized server list
+	$self->perlcassa::Client::generate_host_hashes();
+	$self->perlcassa::Client::generate_server_list();
 
 	return $self;
 }

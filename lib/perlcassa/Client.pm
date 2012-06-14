@@ -4,54 +4,183 @@ use strict;
 use warnings;
 use base 'Exporter';
 
-our @EXPORT = qw(setup close_conn client_setup);
+our @EXPORT = qw(setup close_conn client_setup fail_host);
 
 use Thrift;
 use Thrift::Socket;
 use Thrift::FramedTransport;
 use Thrift::XS::BinaryProtocol;
 
-use ResourcePool;
-use ResourcePool::Factory;
-use ResourcePool::LoadBalancer;
+use Time::HiRes qw ( gettimeofday );
+use threads;
 
-sub get_server() {
+#####################################################################################################
+# generate_host_hashes()
+# generate two hashes to track both working and failed cassandra resources
+#####################################################################################################
+sub generate_host_hashes() {
 	my $self = shift;
 
-	if (!defined($self->{loadbalancer})) {
-		$self->perlcassa::Client::_load_loadbalancer_hosts();
-	}
-
-	my $resource = $self->{loadbalancer}->get();
-
-	if (defined($resource)) {
-		$self->{server} = $resource;
-
-		if ($self->{debug} == 1) {
-			print STDERR "[DEBUG] Using server [$self->{server}->{ARGUMENT}]\n";
-		}
-
-		return $self->{server};
-	} else {
-		die('[ERROR] Unable to connect to any of the provided Cassandra hosts.');
+	foreach my $host (@{$self->{hosts}}) {
+		$self->{availablehosts}{$host} = 1;
 	}
 }
 
 #####################################################################################################
-# _load_loadbalancer_hosts() creates a new ResourcePool::LoadBalancer object with the specified hosts
+# generate_server_list()
+# generate the round robbin load balancer pool with avaliable servers
 #####################################################################################################
-sub _load_loadbalancer_hosts() {
+sub generate_server_list() {
 	my $self = shift;
 
-	$self->{loadbalancer} = ResourcePool::LoadBalancer->new("Cassandra", Policy => "LeastUsage", "MaxTry" => 2);
+	my $tmpscalar = $self->{availablehosts};
+	my %hosts = %$tmpscalar;
 
-	foreach my $host (@{$self->{hosts}}) {
-		my $factory = ResourcePool::Factory->new($host);
-		my $pool = ResourcePool->new($factory);
-
-		$self->{loadbalancer}->add_pool($pool);
+	# build up a nonrandomized server list from the current hash
+	my @tmplist;
+	for my $key (sort(keys(%hosts))) {
+		push (@tmplist, $key);
 	}
 
+	# randomize the server list
+	my $number_of_servers = scalar(keys(%hosts));
+
+	if ($number_of_servers == 0) {
+		die('[ERROR] There were no available Cassandra servers left');
+	}
+
+	my %addedhost; # keep track of what servers we have already added incase random number is the same more than once
+	my @availablehosts;
+	while (scalar(@availablehosts) < $number_of_servers) {
+		my ($s, $usec) = gettimeofday();
+		my $randomserver = $tmplist[$usec%$number_of_servers];
+
+		if (!defined($addedhost{$randomserver})) {
+			$addedhost{$randomserver} = 1;
+			push (@availablehosts, $tmplist[$usec%$number_of_servers]);
+		}
+	} 
+
+	# reset our request count that we use to grab the next host round robin
+	$self->{request_count} = 0;
+
+	$self->{hostpool} = \@availablehosts;
+
+	if ($self->{debug} == 1) {
+		print STDERR "regenerated_server_list @availablehosts";
+	}
+}
+
+#####################################################################################################
+# failure_thread()
+# failure thread logic
+# runs in the background and tries every 30 seconds to see if the host is back up
+# if it is back up, adds the host back into the pool of avaliable hosts
+#####################################################################################################
+sub failure_thread() {
+	my $self = shift;
+
+	my $tmp = $self->{failedhosts};
+	my %failedhosts = %$tmp;
+
+	while (scalar(keys(%failedhosts)) != 0) {
+		for my $key (sort(keys(%failedhosts))) {
+			if (defined($self->perlcassa::Client::check_host($key))) {
+				$self->perlcassa::Client::recover_host($key);
+				%failedhosts = %$tmp;
+			}
+		}
+
+		%failedhosts = %$tmp;
+		sleep(30);
+	}
+
+	$self->{failure_thread_running} = 0;
+	threads->exit();
+}
+
+#####################################################################################################
+# check_host($)
+# @args = host to check Thrift status on
+# check to see if a cassandra node is up or not
+# returns undef if host is down or 1 if host is up
+#####################################################################################################
+sub check_host($) {
+	my ($self, $host) = @_;
+
+	my $socket = new Thrift::Socket($host, $self->{port});
+	my $transport = new Thrift::FramedTransport($socket,1024,1024);
+	my $protocol = new Thrift::XS::BinaryProtocol($transport);
+	my $client = new Cassandra::CassandraClient($protocol);
+
+	eval {
+		$transport->open();
+	};
+
+	if ($@) {
+		return undef;
+	} else {
+		return 1;
+	}
+}
+
+#####################################################################################################
+# fail_host($)
+# @arts = host to fail
+# remove a failed host from the pool of avaliable cassandra hosts
+#####################################################################################################
+sub fail_host($) {
+	my ($self, $failed_host) = @_;
+
+	delete($self->{availablehosts}{$failed_host});
+	$self->{failedhosts}{$failed_host} = time;
+
+	# create a thread to check every n seconds to see if this hosts comes back
+	unless ($self->{failure_thread_running} == 1) {
+		my $thr = threads->create('failure_thread', $self);
+		$self->{failure_thread_running} = 1;
+		$thr->detach();
+	}
+
+	# regenerate the server list
+	$self->perlcassa::Client::generate_server_list();
+
+	warn("[WARNING] Failed $failed_host");
+}
+
+#####################################################################################################
+# recover_host($)
+# @args = host to add back into pool
+# add a previously failed host back into the avaliable pool
+#####################################################################################################
+sub recover_host($) {
+	my ($self, $host) = @_;
+
+	delete($self->{failedhosts}{$host});
+	$self->{availablehosts}{$host} = 1;
+
+	# regenerate the server list
+	$self->perlcassa::Client::generate_server_list();
+
+	warn("[WARNING] Recovered $host back into the pool");
+}
+
+#####################################################################################################
+# get_host()
+# get the next avaliable cassandra host
+#####################################################################################################
+sub get_host() {
+	my ($self) = @_;
+
+	my $host = @{$self->{hostpool}}[$self->{request_count}%scalar(@{$self->{hostpool}})];
+
+	if ($self->{debug} == 1) {
+		print STDERR "[DEBUG] Using host $host\n";
+	}
+
+	$self->{request_count}++;
+
+	return $host;
 }
 
 #####################################################################################################
@@ -62,7 +191,6 @@ sub close_conn() {
 
 	if (defined($self->{transport})) {
 		$self->{transport}->close();
-		$self->{loadbalancer}->free($self->{server});
 		$self->{server} = undef;
 		$self->{client} = undef;
 	}
@@ -81,16 +209,15 @@ sub setup() {
 		my $connected = 0;
 		my $attempts = 0;
 		while ($connected != 1) {
-			my $serverobj = $self->perlcassa::Client::get_server();
-			my $serveraddr = $serverobj->{ARGUMENT};
+			my $host = $self->perlcassa::Client::get_host();
 
-			$self->{socket} = new Thrift::Socket($serveraddr, $self->{port});
+			$self->{socket} = new Thrift::Socket($host, $self->{port});
 			$self->{transport} = new Thrift::FramedTransport($self->{socket},1024,1024);
 			$self->{protocol} = new Thrift::XS::BinaryProtocol($self->{transport});
 			$self->{client} = new Cassandra::CassandraClient($self->{protocol});
 
-			if ($attempts > 2) {
-				die('[ERROR] Unable to connect to a host for this request');
+			if ($attempts >= $self->{max_retry}) {
+				die("[ERROR] Max connection attempts [$attempts] to a Cassandra host exceeded for this operation");
 			}
 
 			eval {
@@ -98,12 +225,13 @@ sub setup() {
 			};
 
 			if ($@) {
-				print STDERR "[WARNING] unable to connect to host $serveraddr, trying next available host\n";
-
-				$self->{loadbalancer}->fail($serverobj);
-				$self->{server} = undef;
+				warn("[WARNING] attempt $attempts of $self->{max_retry} - unable to connect to host $host");
+				$self->perlcassa::Client::fail_host($host);
 				$attempts++;
 			} else {
+				if ($attempts > 0) {
+					warn("[WARNING] attempt $attempts of $self->{max_retry} - sucessfully connected to host $host");
+				}
 				$connected = 1;
 			}
 		}
