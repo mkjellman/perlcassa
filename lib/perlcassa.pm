@@ -55,7 +55,7 @@ $obj->bulk_insert(
 
 =head1 REQUIRES
 
-Perl5.10, Thrift::XS, ResourcePool, ResoucePool::Factory, ResoucePool::LoadBalancer, Time::HiRes 
+Perl5.10, Thrift::XS, Time::HiRes 
 
 =head1 EXPORTS
 
