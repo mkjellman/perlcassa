@@ -6,7 +6,7 @@ perlcassa - Perl Client for Apache Cassandra
 
 =head1 VERSION
 
-v0.02
+v0.03
 
 =head1 SYNOPSIS
 
@@ -39,7 +39,18 @@ $obj->get(
 $obj->get_slice(
 	'key'		=> 'myKey',
 	'start'		=> ['name_pt1'],
-	'finish'	=> ['name_pt2'],
+	'finish'	=> ['name_pt2','name_pt2_c'],
+	'start_equality' => 'equal', #optional (defaults to equal, options: equal, less_than_equal, or greater_than_equal)
+	'finish_equality'=> 'greater_than_equal' #optional (defaults to greater_than_equal, options: equal, less_than_equal, or greater_than_equal)
+);
+
+$obj->get_range_slices(
+	key_start => '',
+	key_finish => '',
+	column_start => ['colpt1','a'],
+	column_finish => ['thiscol'],
+	key_max_count => 10000,
+	buffer_size => 100
 );
 
 my %bulk = (
@@ -760,77 +771,102 @@ sub _pack_values() {
 		my @finishpackoptions;
 		my @finishpackvalues;
 
-		my $i = 0;
+		# check if we are given a composite for a start or finish that we were given at least the number given of validators
+		if (scalar(@{$composite{'start'}}) > scalar(@validationComparators)) {
+			die("[ERROR] More start components were given than validators defined for column family [$columnfamily]");
+		}
+
+		if (scalar(@{$composite{'finish'}}) > scalar(@validationComparators)) {
+			die("[ERROR] More finish components were given than validators defined for column family [$columnfamily]");
+		}
+
 		#first take care of the start query pack
+		my $i = 0;
 		foreach my $val (@{$composite{'start'}}) {
+			#pack nothing if '' specified
+			last if (scalar(@{$composite{'start'}}) == 1 && ${$composite{'start'}}[0] eq '');
+
 			my $packstring = $val;
 
-			if (scalar(@{$composite{'start'}}) == 1 && $val eq '') {
-				# we don't want to pack anything if an empty string 
-				push(@startpackoptions, 'a*');
-				push(@startpackvalues, $packstring);	
-			} elsif (scalar(@validationComparators) == 1) {
-				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
-				push(@startpackoptions, 'a*');
-				push(@startpackvalues, $packstring);	
-			} else {
-				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
-				push(@startpackoptions, 'n');
-				push(@startpackoptions, 'a*');
-				push(@startpackoptions, 'C');
+			unless ($packstring eq '') {
+				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $val);
+			}
 
-				my $length = length($packstring);
-				push(@startpackvalues, $length);
-				push(@startpackvalues, $packstring);
+			my $length = length($packstring);
+
+			push(@startpackoptions, 'n');
+			push(@startpackvalues, $length);
+
+			push(@startpackoptions, "a$length");
+			push(@startpackvalues, $packstring);
+
+			push(@startpackoptions, 'c');
+
+			# each element should be seperated by a 0, otherwise terminate the query
+			# as either a LESS_THAN_EQUAL => -1, EQUAL => 0, or GREATER_THAN_EQUAL => 1
+			#
+			# if not specified by user, default to EQUAL for start
+			if (${$composite{'start'}}[-1] eq $val) {
+				if (defined($composite{'start_equality'}) && lc($composite{'start_equality'}) eq 'less_than_equal') {
+					push(@startpackvalues, -1); #LESS_THAN_EQUAL (e.g. non-inclusive)
+				} elsif (defined($composite{'start_equality'}) && lc($composite{'start_equality'}) eq 'greater_than_equal') {
+					push(@startpackvalues, 1); #GREATER_THAN_EQUAL
+				} else {
+					push(@startpackvalues, 0); #EQUAL (default)
+				}
+			} else {
 				push(@startpackvalues, 0);
 			}
-			
 			
 			$i++;
 		}
 
-		# track the number of elements so we know if we need to terminate the finish string
-		my $numofelements = scalar(@{$composite{'finish'}});
-		my $j = 0;
-
-		$i = 0;
 		#next take care of the finish query (is the search inclusive?)
+		my $j = 0;
+		$i = 0;
 		foreach my $val (@{$composite{'finish'}}) {
+			#pack nothing if '' specified
+			last if (scalar(@{$composite{'finish'}}) == 1 && ${$composite{'finish'}}[0] eq '');
+
 			my $packstring = $val;
 
-			if (scalar(@{$composite{'finish'}}) == 1 && $val eq '') {
-				# we don't want to pack anything if an empty string
-				push(@finishpackoptions, 'a*');
-				push(@finishpackoptions, $packstring); 
-			} elsif (scalar(@validationComparators) == 1) {
+			unless ($val eq '') {
 				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
-				push(@finishpackoptions, 'a*');
-				push(@finishpackoptions, $packstring); 
-			} else {
-				$packstring = pack($validation_map{@{$self->{comparators}{$columnfamily}}[$i]}, $packstring);
-				push(@finishpackoptions, 'n');
-				push(@finishpackoptions, 'a*');
-				push(@finishpackoptions, 'C');
+			}
 
-				my $length = length($packstring);
-				push(@finishpackvalues, $length);
-				push(@finishpackvalues, $packstring);
+			my $length = length($packstring);
 
-				# default to the last element being GREATER_THAN_EQUAL
-				if ($numofelements == 1 || $j >= $numofelements) {
-					push(@finishpackvalues, 1);
+			push(@finishpackoptions, 'n');
+			push(@finishpackvalues, $length);
+
+			push(@finishpackoptions, "a$length");
+			push(@finishpackvalues, $packstring);
+
+			push(@finishpackoptions, 'c');
+
+			if (${$composite{'finish'}}[-1] eq $val) {
+				if (defined($composite{'finish_equality'}) && lc($composite{'finish_equality'}) eq 'less_than_equal') {
+					push(@finishpackvalues, -1); #LESS_THAN_EQUAL (e.g. non-inclusive)
+				} elsif (defined($composite{'finish_equality'}) && lc($composite{'finish_equality'}) eq 'equal') {
+					push(@finishpackvalues, 0); #EQUAL
 				} else {
-					push(@finishpackvalues, 0);
+					push(@finishpackvalues, 1); #GREATER_THAN_EQUAL (default)
 				}
+			} else {
+				push(@finishpackvalues, 0);
 			}
 
 			$i++;
 			$j++;
 		}
 
+		if ($self->{debug} == 1) {
+			print STDERR "[DEBUG] Pack for start query will be @startpackoptions  |  @startpackvalues\n";
+			print STDERR "[DEBUG] Pack for finish query will be @finishpackoptions | @finishpackvalues\n";
+		}
+
 		my $startquery = pack(join(' ', @startpackoptions),@startpackvalues); 
 		my $finishquery = pack(join(' ', @finishpackoptions),@finishpackvalues);
-
 		return (\$startquery, \$finishquery);
 	}
 
@@ -1091,7 +1127,7 @@ sub _unpack_columnname_values() {
 
 	if ($self->{debug} == 1) {
 		# print out the hex dump of composite value
-		print STDERR join(" ", map({sprintf("%02x", ord($_)); } unpack("(a1)*",$composite))) . "\n";
+		print STDERR "[DEBUG] ". join(" ", map({sprintf("%02x", ord($_)); } unpack("(a1)*",$composite))) . "\n";
 	}
 
 	my $unpackstr = 'n';
@@ -1172,8 +1208,10 @@ sub get_slice() {
 	my %query;
 	if (defined($opts{start}) && defined($opts{finish}) && scalar(@{$opts{start}}) > 0) {
 		%query = (
-			'start' => \@{$opts{start}},
-			'finish'=> \@{$opts{finish}}
+			'start' 		=> \@{$opts{start}},
+			'finish'		=> \@{$opts{finish}},
+			'start_equality'	=> $opts{start_equality},
+			'finish_equality'	=> $opts{finish_equality}
 		);
 	} else {
 		die('you must provide both \'start\' and \'finish\' arrays as hash elements');
@@ -1182,7 +1220,7 @@ sub get_slice() {
 	$self->client_setup('keyspace' => $keyspace, 'columnfamily' => $column_family);
 	my $client = $self->{client};
 	
-	# do we need to pack the requests first?
+	# pack the requests first
 	my ($slicestart, $slicefinish) = $self->_pack_values(\%query, $column_family);
 
 	my $column_parent = new Cassandra::ColumnParent({column_family => $column_family});
@@ -1204,12 +1242,18 @@ sub get_slice() {
 
 	close_conn();
 
+	return $self->_deserialize_column_array($res, $opts{return_expired});
+}
+
+sub _deserialize_column_array() {
+	my ($self, $serialized_array, $return_expired) = @_;
+
 	my @return;
-	foreach my $result (@{$res}) {
+	foreach my $result (@{$serialized_array}) {
 		# remove expired columns from returned results unless overridden by 'return_expired' in opts:
 		if (defined($result->{column}{timestamp}) && defined($result->{column}{ttl})) {
 			my $expiretime = $result->{column}{timestamp} + $result->{column}{ttl};
-			if ($expiretime < time && $opts{return_expired} != 1) {
+			if ($expiretime < time && $return_expired != 1) {
 				next;
 			}
 		}
@@ -1231,6 +1275,7 @@ sub get_slice() {
 	}
 
 	return \@return;
+	
 }
 
 sub get_range_slices() {
@@ -1239,16 +1284,29 @@ sub get_range_slices() {
 	my $column_family = $opts{columnfamily} || $self->{columnfamily};
 	my $consistencylevel = $opts{consistency} || $self->{read_consistency_level};
 	my $keyspace = $opts{keyspace} || $self->{keyspace};
-	my $column_start = $opts{column_start} || '';
-	my $column_end = $opts{column_end} || '';
 	my $key_start = $opts{key_start} || '';
-	my $key_end = $opts{key_end} || '';
+	my $key_finish = $opts{key_finish} || '';
 	my $column_max_count = $opts{column_max_count} || 100;
 	my $key_max_count = $opts{key_max_count} || 100;
 	my $reversed = $opts{reversed} || 0;
 	my $buffer_size = $opts{buffer_size} || 1024;
 
-	my @return; 
+	my %return; 
+
+	$self->client_setup('keyspace' => $keyspace, 'columnfamily' => $column_family);
+	my $client = $self->{client};
+
+	my @emptyarray = [''];
+
+	my %query = (
+		'start' 		=> \@{$opts{column_start}} || \@emptyarray,
+		'finish'		=> \@{$opts{column_finish}} || \@emptyarray,
+		'start_equality'	=> $opts{start_equality},
+		'finish_equality'	=> $opts{finish_equality}
+	);
+
+	# pack the column names first
+	my ($column_slicestart, $column_slicefinish) = $self->_pack_values(\%query, $column_family);
 
 	# we need to make multiple requests if there are more records requested than what can fit in the buffer
 	if ($key_max_count > $buffer_size || $column_max_count > $buffer_size) {
@@ -1262,7 +1320,7 @@ sub get_range_slices() {
 		my $finished = 0;
 
 		my $tmpstart_key;
-		my $tmpend_key;
+		my $tmpfinish_key;
 
 		# first how many times to we need to loop over the keys first, then deal with buffering columns
 		while ($finished != 1 && $runcount_key < $numtorun_key) {
@@ -1270,61 +1328,66 @@ sub get_range_slices() {
 				$tmpstart_key = $key_start;
 			}
 
-			if (!defined($tmpend_key)) {
-				$tmpend_key = $key_end;
+			if (!defined($tmpfinish_key)) {
+				$tmpfinish_key = $key_finish;
 			}
 
 			#make a request from $tmpmin_key up to the buffer
 			my $sliceres = $self->_call_get_range_slices(
 				keyspace	=> $keyspace,
 				column_family 	=> $column_family,
-				column_start	=> $column_start,
-				column_end	=> $column_end,
+				column_start	=> $$column_slicestart,
+				column_end	=> $$column_slicefinish,
 				key_start	=> $tmpstart_key,
-				key_end		=> $tmpend_key,
+				key_end		=> $tmpfinish_key,
 				column_max_count=> $column_max_count,
 				key_max_count	=> $buffer_size,
 				reversed	=> $reversed,
-				consistencylevel=> $consistencylevel
+				consistencylevel=> $consistencylevel,
+				order		=> \@{$return{'**order**'}}
 			);
 
-			my @tt = @{$sliceres};
-			@return = (@return, @tt);
+			my %tt = %$sliceres;
+			%return = (%return, %tt);
+
 			# get the last key returned and set that equal to the new start key
-			my $totalkeys = scalar(@{$sliceres});
+			my $totalkeys = scalar(keys(%$sliceres));
 
 			if ($totalkeys < $buffer_size) {
 				$finished = 1;
 			} else {
-				$tmpstart_key = @{$sliceres}[$totalkeys-1]->{key};
+				$tmpstart_key = pop(@{$tt{'**order**'}});
 			}
 			
 			$runcount_key++;
 		}
 		
 	} else {
-		@return = $self->_call_get_range_slices(
+		my $sliceres = $self->_call_get_range_slices(
 			keyspace	=> $keyspace,
 			column_family 	=> $column_family,
-			column_start	=> $column_start,
-			column_end	=> $column_end,
+			column_start	=> $$column_slicestart,
+			column_end	=> $$column_slicefinish,
 			key_start	=> $key_start,
-			key_end		=> $key_end,
+			key_end		=> $key_finish,
 			column_max_count=> $column_max_count,
 			key_max_count	=> $key_max_count,
 			reversed	=> $reversed,
 			consistencylevel=> $consistencylevel
 		);
+
+		my %tt = %$sliceres;
+		%return = (%return, %tt);
 	}
 
-	return \@return;
+	return \%return;
 }
 
 sub _call_get_range_slices() {
 	my ($self, %opts) = @_;
 
-	$self->client_setup('keyspace' => $opts{keyspace}, 'columnfamily' => $opts{column_family});
 	my $client = $self->{client};
+	my @order = @{$opts{order}};
 
 	my $column_parent = new Cassandra::ColumnParent({column_family => $opts{column_family}});
 	my $slice_range = new Cassandra::SliceRange();
@@ -1349,6 +1412,27 @@ sub _call_get_range_slices() {
 	} else {
 		$res = $client->get_range_slices($column_parent, $predicate, $key_range, $opts{consistencylevel});
 	}
+
+	my %deserialized;
+
+	#make sure we merge order array from previous runs
+	@{$deserialized{'**order**'}} = @order;
+
+	my $i = 0;
+	foreach my $row (@{$res}) {
+		my $keyname = ${@{$res}[$i]}{'key'};
+		foreach my $col (${@{$res}[$i]}{'columns'}) {
+			my $deserialized_array_res = $self->_deserialize_column_array($col);
+			$deserialized{$keyname} = $deserialized_array_res;
+		}
+
+		# push this key name onto array so we can track order returned to us from cassandra
+		push (@{$deserialized{'**order**'}}, $keyname);
+
+		$i++;
+	}
+
+	return \%deserialized;
 }
 
 # This logic will not preserve the order the keys were returned in from Cassandra 

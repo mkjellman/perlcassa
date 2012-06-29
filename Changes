@@ -10,3 +10,7 @@ Change History
 	- added the ability to manually provide the validation classes
 	- general bug fixes
 	- added ability to set a timeout on thrift calls (set timeout => val in object creation)
+
+0.03	June 29, 2012
+	-serialize and deserialize get_range_slice requests properly
+	-add logic to get_slice so it properly understands equalities (less_than_equal, equal, or greater_than_equal)
