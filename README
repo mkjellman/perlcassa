@@ -1,7 +1,7 @@
 This is Perl module perlcassa.
 
 VERSION
-	v0.02
+	v0.03
 
 INSTALLATION
 	perlcassa can be installed by doing the usual:
@@ -41,13 +41,24 @@ SYNOPOSIS
                 'key'           => 'myKey',
                 'columnname'    => 'myColumn'
         );
-        
-        $obj->get_slice(
-                'key'           => 'myKey',
-                'start'         => ['name_pt1'],
-                'finish'        => ['name_pt2'],
-        );
 
+	$obj->get_slice(
+		'key'           => 'myKey',
+		'start'         => ['name_pt1'],
+		'finish'        => ['name_pt2','name_pt2_c'],
+		'start_equality' => 'equal', #optional (defaults to equal, options: equal, less_than_equal, or greater_than_equal)
+		'finish_equality'=> 'greater_than_equal' #optional (defaults to greater_than_equal, options: equal, less_than_equal, or greater_than_equal)
+	);
+
+	$obj->get_range_slices(
+		key_start => '',
+		key_finish => '',
+		column_start => ['colpt1','a'],
+		column_finish => ['thiscol'],
+		key_max_count => 10000,
+		buffer_size => 100
+	);
+        
         my %bulk = (
                 #value => [columnname]
                 'test'  => ['name_pt1', 'name_pt2'],
