@@ -738,6 +738,78 @@ sub get() {
 }
 
 #####################################################################################################
+# multiget_slice allows you to pull out a keys/columns from cassandra. The client will deserialize the data
+# and will return a hash ref:
+# { key => { column => value, }, ... }
+#
+# $obj->multiget_slice(
+#	'columnfamily'  => 'myCF', #optional if provided in object creation
+#	'keyspace'	=> 'myKeyspace', #optional if provided in object creation
+#	'keys'		=> ['key', ...],
+#	'columnnames'	=> ['column' , ...],
+#	'predicate_columnnames'	=> ['column' , ...] =># defult same as columnnames
+#	'predicate_slicerange'	=> TODO,
+# );
+#####################################################################################################
+sub multiget_slice {
+	my ($self, %opts) = @_;
+
+	my $column_family = $opts{columnfamily} || $self->{columnfamily};
+	my $keyspace = $opts{keyspace} || $self->{keyspace};
+	my $consistencylevel = $opts{consistency_level} || $self->{read_consistency_level};
+
+	$self->client_setup('keyspace' => $keyspace, 'columnfamily' => $column_family);
+
+	my @keys = @{ $opts{keys} // [] };
+    my @keys_packed;
+    foreach(@keys) {
+        push @keys_packed, $self->_pack_values({values => [$_]}, $column_family, 'key');
+    }
+
+	my $column_parent = new Cassandra::ColumnPath();
+	$column_parent->{column_family} = $column_family;
+	$column_parent->{column} = $opts{columnnames};
+
+    my $predicate = Cassandra::SlicePredicate->new({
+        column_names    => $opts{predicate_columnnames} // $opts{columnnames},
+        slice_range     => $opts{predicate_slicerange},
+    });
+
+	my $res = $self->_do_with_timeout(sub {
+		$self->{client}->multiget_slice(
+            \@keys,
+            $column_parent,
+            $predicate,
+            $consistencylevel,
+        );
+	});
+
+    my $r = {};
+    while(my($k,$v) = each %{ $res // {} }) {
+        my %cols;
+        foreach(@{ $v // [] }) {
+            $cols{$_->{column}->{name}} = $self->_unpack_value(packedstr => $_->{column}->{value}, mode => 'value_validation');
+        }
+        $r->{$k}  = \%cols;
+    }
+
+	return $r;
+}
+
+sub _do_with_timeout {
+    my ($self, $func, $args)    = @_;
+
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "Get Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+        &$func(@{ $args // [] });
+		alarm($alarm);
+	} else {
+        &$func(@{ $args // [] });
+	}
+}
+
+#####################################################################################################
 # _pack_values() takes a string and packs the values as determined by the ComparatorType on the columnfamily
 # The ComparatorType is pulled from Cassandra by default, future versions will let you manually specify
 # the validation classes
