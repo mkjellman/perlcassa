@@ -751,9 +751,17 @@ sub get() {
 #	'columnfamily'  => 'myCF', #optional if provided in object creation
 #	'keyspace'	=> 'myKeyspace', #optional if provided in object creation
 #	'keys'		=> ['key', ...],
-#	'columnnames'	=> ['column' , ...],
-#	'predicate_columnnames'	=> ['column' , ...] =># defult same as columnnames
-#	'predicate_slicerange'	=> TODO,
+#	'columnnames'	=> ['column' , ...]
+# );
+#
+# $obj->multiget_slice(
+#	'columnfamily'  => 'myCF', #optional if provided in object creation
+#	'keyspace'	=> 'myKeyspace', #optional if provided in object creation
+#	'keys'		=> ['key', ...],
+#	'columnstart'	=> 'abc',
+#	'columnfinish'	=> 'zxy',
+#	'reversed'	=> 0, #optional, defaults to 0, specify 1 to reverse results
+#	'count'		=> 100 #optional, defaults to 100, specify number of columns to return in query
 # );
 #####################################################################################################
 sub multiget_slice {
@@ -762,55 +770,90 @@ sub multiget_slice {
 	my $column_family = $opts{columnfamily} || $self->{columnfamily};
 	my $keyspace = $opts{keyspace} || $self->{keyspace};
 	my $consistencylevel = $opts{consistency_level} || $self->{read_consistency_level};
+	my $columns = $opts{columnnames};
 
 	$self->client_setup('keyspace' => $keyspace, 'columnfamily' => $column_family);
 
 	my @keys = @{ $opts{keys} // [] };
-    my @keys_packed;
-    foreach(@keys) {
-        push @keys_packed, $self->_pack_values({values => [$_]}, $column_family, 'key');
-    }
+	my @keys_packed;
+	foreach(@keys) {
+        	push @keys_packed, $self->_pack_values({values => [$_]}, $column_family, 'key');
+	}
+
+	# pack the column names unless object created specifying we shouldn't pack the values
+	if ($self->{donotpack} == 1) {
+		unless (ref($columns) eq "HASH") {
+			# deal with a scalar being passed instead of an array
+			my %columnnamehash = ('values' => [$columns]);
+			$columns = $self->_pack_values(\%columnnamehash, $column_family, 'column');
+		} else {
+			$columns = $self->_pack_values($columns, $column_family, 'column');
+		}
+	}
 
 	my $column_parent = new Cassandra::ColumnPath();
 	$column_parent->{column_family} = $column_family;
-	$column_parent->{column} = $opts{columnnames};
+	$column_parent->{column} = $columns;
 
-    my $predicate = Cassandra::SlicePredicate->new({
-        column_names    => $opts{predicate_columnnames} // $opts{columnnames},
-        slice_range     => $opts{predicate_slicerange},
-    });
+	my $slice_range = new Cassandra::SliceRange();
+	$slice_range->{start} = $opts{columnstart};
+	$slice_range->{finish} = $opts{columnfinish};
+	if (defined($opts{reversed}) && $opts{reversed} == 1) {
+		$slice_range->{reversed} = 1;
+	}
+	
+	$slice_range->{count} = $opts{count} // 100;
 
-	my $res = $self->_do_with_timeout(sub {
+	# you can either have a slice_range OR an array of column_names
+	if (defined($opts{columnstart}) && defined($opts{columnnames})) {
+		die('multiget_slice can either have a column range specified (start / finish) OR an array of column names');
+	}
+
+	my $predicate;
+	if (defined($opts{columnstart}) && defined($opts{columnfinish})) {
+		$predicate = Cassandra::SlicePredicate->new({
+			slice_range     => $slice_range
+		});
+	} elsif (defined(@{$opts{columnnames}}[0])) {
+		$predicate = Cassandra::SlicePredicate->new({
+			column_names	=> $opts{columnnames}
+		});
+	} else {
+		die('multiget_slice must be called with either an array of columnnames OR a start and finish column name'); 
+	}
+
+
+	my $res = $self->_do_multiget_slice_with_timeout(sub {
 		$self->{client}->multiget_slice(
-            \@keys,
-            $column_parent,
-            $predicate,
-            $consistencylevel,
-        );
+		\@keys,
+		$column_parent,
+		$predicate,
+		$consistencylevel,
+		);
 	});
 
-    my $r = {};
-    while(my($k,$v) = each %{ $res // {} }) {
-        my %cols;
-        foreach(@{ $v // [] }) {
-            $cols{$_->{column}->{name}} = $self->_unpack_value(packedstr => $_->{column}->{value}, mode => 'value_validation');
-        }
-        $r->{$k}  = \%cols;
-    }
+	my $r = {};
+	while(my($k,$v) = each %{ $res // {} }) {
+		my %cols;
+		foreach(@{ $v // [] }) {
+			$cols{$_->{column}->{name}} = $self->_unpack_value(packedstr => $_->{column}->{value}, mode => 'value_validation');
+		}
+		$r->{$k}  = \%cols;
+	}
 
 	return $r;
 }
 
-sub _do_with_timeout {
-    my ($self, $func, $args)    = @_;
+sub _do_multiget_slice_with_timeout {
+	my ($self, $func, $args)    = @_;
 
 	if (defined($self->{timeout})) {
 		local $SIG{ALRM} = sub { die "Get Timed Out"; };
 		my $alarm = alarm($self->{timeout});
-        &$func(@{ $args // [] });
+		&$func(@{ $args // [] });
 		alarm($alarm);
 	} else {
-        &$func(@{ $args // [] });
+		&$func(@{ $args // [] });
 	}
 }
 
