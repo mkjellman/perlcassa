@@ -178,7 +178,8 @@ sub new() {
 		request_count => 0,
 		availablehosts => {},
 		failure_thread_running => 0,
-		max_retry => $opt{max_retry} || 2 # max number of times to try and connect for this request
+		max_retry => $opt{max_retry} || 2, # max number of times to try and connect for this request
+		donotpack => $opt{donotpack} || 0 #will insert with raw values and not autopack values
 	}, $class;
 
 	# generate the inital randomized server list
@@ -639,13 +640,17 @@ sub bulk_insert() {
 	my %columns = %$columns;
 	my %packedbulk;
 	foreach my $value (sort(keys(%columns))) {
-		my %valuehash = ('values' => [$value]);
-		my $packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value');
+		if ($self->{donotpack} == 1) {
+			$packedbulk{$value} = @{$columns{$value}}[0];
+		} else {
+			my %valuehash = ('values' => \@{$columns{$value}});
+			my $packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value');
 
-		my %columnhash = ('values' => \@{$columns{$value}});
-		my $packedname = $self->_pack_values(\%columnhash, $columnfamily, 'column');
-
-		$packedbulk{$packedname} = $packedvalue;
+			my %columnhash = ('values' => [$value]);
+			my $packedname = $self->_pack_values(\%columnhash, $columnfamily, 'column');
+		
+			$packedbulk{$packedname} = $packedvalue;
+		}
 	}
 
 	my @mutations;
@@ -867,6 +872,12 @@ sub _pack_values() {
 
 		my $startquery = pack(join(' ', @startpackoptions),@startpackvalues); 
 		my $finishquery = pack(join(' ', @finishpackoptions),@finishpackvalues);
+
+		if ($self->{debug} == 1) {
+			print STDERR "[DEBUG] HEX String for start query is ".join(" ", map( { sprintf("%02x", ord($_)); } unpack("(a1)*", $startquery))) . "\n";
+			print STDERR "[DEBUG] HEX String for finish query is ".join(" ", map( { sprintf("%02x", ord($_)); } unpack("(a1)*", $finishquery))) . "\n";
+		}
+
 		return (\$startquery, \$finishquery);
 	}
 
@@ -1387,7 +1398,10 @@ sub _call_get_range_slices() {
 	my ($self, %opts) = @_;
 
 	my $client = $self->{client};
-	my @order = @{$opts{order}};
+	my @order;
+	if (defined(@{$opts{order}}[0])) {
+		@order = @{$opts{order}};
+	} 
 
 	my $column_parent = new Cassandra::ColumnParent({column_family => $opts{column_family}});
 	my $slice_range = new Cassandra::SliceRange();
