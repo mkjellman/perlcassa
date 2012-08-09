@@ -306,13 +306,12 @@ sub execute() {
 sub describe_all_columnfamilies() {
 	my ($self, %opts)  = @_;
 
-	my $keyspace = $opts{keyspace};
+	my $keyspace = $opts{keyspace} || $self->{keyspace};
 	
 	$self->client_setup('keyspace' => $keyspace);
 	my $client = $self->{client};
 
 	my $keyspacedesc = $client->describe_keyspace($keyspace);
-
 	my $columnfamilydesc = $keyspacedesc->{cf_defs};
 
 	my %return;
@@ -463,7 +462,8 @@ sub insert() {
 	};
 
 	if ($@) {
-		die("[ERROR] Insert was unsucessful $@");
+		my %error = %{$@};
+		die("[ERROR] Insert was unsucessful: $error{why}");
 	}
 }
 
@@ -488,7 +488,8 @@ sub remove() {
 	};
 
 	if ($@) {
-		die("[ERROR] Remove was unsuccessful $@");
+		my %error = %{$@};
+		die("[ERROR] Remove was unsuccessful: $error{why}");
 	}
 
 }
@@ -528,7 +529,8 @@ sub add() {
 	};
 
 	if ($@) {
-		die("[ERROR] add failed. $@");
+		my %error = %{$@};
+		die("[ERROR] Add Failed: $error{why}");
 	}
 }
 
@@ -576,7 +578,7 @@ sub _call() {
 		unless ($thrift_operation eq 'add') {
 			# pack the value to comply with the default column family validator on this column family
 			my %valuehash = ('values' => [$value]);
-			$packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value');
+			$packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value', $name);
 		}
 	}
 
@@ -860,27 +862,47 @@ sub _do_multiget_slice_with_timeout {
 #####################################################################################################
 # _pack_values() takes a string and packs the values as determined by the ComparatorType on the columnfamily
 # The ComparatorType is pulled from Cassandra by default, future versions will let you manually specify
-# the validation classes
+# the validation classes. $name should be the columnname and only needs to be passed when you are packing a value
 #
 # my %composite = (
 # 	'values'     => ['test1', 0, 'bytes2', time],
+#	'column_comparators' => ['UTF8Type','IntegerType','UTF8Type','LongType'] # optional, manually specify validators on a per pack basis
 # );
 #
-# _pack_values(\%composite, 'mycf'); 
+# _pack_values(\%composite, 'mycf');
 #####################################################################################################
 sub _pack_values() {
-	my ($self, $composite, $columnfamily, $type) = @_;
+	my ($self, $composite, $columnfamily, $type, $columnname) = @_;
 	my %composite = %$composite;
 
-	# if a array of validation classes has been passed in with the name hash, use that, otherwise, determine it from the keyspace definition
+	# if metadata was specified on the columnfamily we need to check if the column being packed
+	# has a different validation class specified than the default validation class
+	my %metadata_validators = %{$self->{metadata_validation}{$columnfamily}};
+
+	# if a array of validation classes has been passed in with the name hash, use that, 
+	# otherwise, determine it from the keyspace definition
 	my @validationComparators;	
 	if (defined($type) && $type eq 'key') {
 		@validationComparators = @{$self->{key_validation}{$columnfamily}};
 	} elsif (defined($type) && $type eq 'value') {
-		@validationComparators = @{$self->{value_validation}{$columnfamily}};
+		# this is a hack to make sure we use the right validation type for now for metadata 
+		# columns with specific values
+		if (defined($columnname) && defined($metadata_validators{$columnname})) {
+			@validationComparators = $metadata_validators{$columnname};
+		} else {
+		# otherwise just use the default value validator for this column family if a specific
+		# value validator for this column name hasn't been passed
+			@validationComparators = @{$self->{value_validation}{$columnfamily}};
+		}
 	} else {
-		@validationComparators = @{$self->{comparators}{$columnfamily}};
+		# use validators provided in composite hash if defined
+		if (defined($composite{column_comparators}) && scalar(@{$composite{column_comparators}}) > 0) {
+			@validationComparators = @{$composite{column_comparatorss}};
+		} else {
+			@validationComparators = @{$self->{comparators}{$columnfamily}};
+		}
 	}
+
 
 	# if this is a query string the logic is a bit different
 	if (defined($composite{start}) && defined($composite{finish})) {
@@ -1013,6 +1035,7 @@ sub _pack_values() {
 		if($i >= scalar(@{$composite{'values'}})) {
 			next;
 		}
+
 
 		$i++; #incremenet our counter for the next item in the array after this pack operation succeeds
 
@@ -1175,6 +1198,7 @@ sub _pack_values() {
 			die("unsupported ValidationType specified [$validationtype]");
 		}
 	}
+
 	return pack(join(' ', @packoptions),@packvalues);
 }
 
