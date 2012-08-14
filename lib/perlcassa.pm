@@ -746,6 +746,7 @@ sub get() {
 	my $data = $res->{column} || $res->{counter_column};
 
 	my $value = $self->_unapck_value(
+		name => [$res->{column}->{name}],
 		packedstr => $data->{value},
 		columnfamily => $column_family,
 		mode => 'value_validation'
@@ -850,6 +851,7 @@ sub multiget_slice {
 		foreach(@{ $v // [] }) {
 			my $data = $_->{column} || $_->{counter_column};
 			$cols{$data->{name}} = $self->_unpack_value(
+				name => [$data->{name}],
 				packedstr => $data->{value},
 				columnfamily => $column_family,
 				mode => 'value_validation'
