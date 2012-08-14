@@ -651,7 +651,7 @@ sub bulk_insert() {
 			$packedbulk{$value} = @{$columns{$value}}[0];
 		} else {
 			my %valuehash = ('values' => \@{$columns{$value}});
-			my $packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value');
+			my $packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value', $value);
 
 			my %columnhash = ('values' => [$value]);
 			my $packedname = $self->_pack_values(\%columnhash, $columnfamily, 'column');
@@ -745,7 +745,7 @@ sub get() {
 	my $res = $self->_get_column($column_family, $column, $key, $consistencylevel);
 	my $data = $res->{column} || $res->{counter_column};
 
-	my $value = $self->_unapck_value(
+	my $value = $self->_unpack_value(
 		name => [$res->{column}->{name}],
 		packedstr => $data->{value},
 		columnfamily => $column_family,
