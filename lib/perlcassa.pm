@@ -6,7 +6,7 @@ perlcassa - Perl Client for Apache Cassandra
 
 =head1 VERSION
 
-v0.04
+v0.041
 
 =head1 SYNOPSIS
 
@@ -74,7 +74,13 @@ Nothing
 
 =head1 DESCRIPTION
 
-perlcassa is a native Perl client for interfacing with Apache Cassandra. It is essentially an API for Apache Thrift. It intelligently deals with CompositeType columns and ValidationClasses and encodes and packs them appropriately for the columnfamily specified.
+perlcassa is a native Perl client for interfacing with Apache Cassandra. It is essentially an API for Apache Thrift. It intelligently deals with CompositeType columns and ValidationClasses and encodes and packs them appropriately for the columnfamily specified. perlcassa deals with connection pooling, automatic retrying of insertions, automatic serialization and deserialization of primitive data types to pass column validation classes and more.
+
+Although other Perl Cassandra clients exist such as Cassandra::Lite and Net::Cassandra they have not been updated for many of the changes in Cassandra releases >0.80. They al
+so do not serialize and deserialize data making them not much more than an abstraction of the base Thrift calls. In my experence the difficulty lies in validation classes and being f
+ault tolerant, not abstracting the Thrift code.
+
+The module name perlcassa follows the naming convention of other Cassandra clients such as phpcassa and pycassa. This module is included on CPAN for convinence however, please see https://github.com/mkjellman/perlcassa for active development.
 
 Note: This package does not support SuperColumns. Please look into CompositeType Comparators instead.
 
@@ -126,7 +132,7 @@ limitations under the License.
 use strict;
 use warnings;
 
-our $VERSION = '0.04';
+our $VERSION = '0.041';
 
 use perlcassa::Client qw/setup close_conn client_setup/;
 

@@ -22,3 +22,6 @@ Change History
 	-supports column families with metadata and properly figures out what type of validation to use on each column name
 	-fixes timestamp bug to use microseconds to keep up with changes to cql in 1.1.x releases of cassandra
 	-fixes unpacking counter columns correctly
+
+0.041	October 10, 2012
+	-Minor clarification changes to description in documentation as asked by 'Anonymous [anonymous@foto.ro1.torservers.net]'
