@@ -14,3 +14,11 @@ Change History
 0.03	June 29, 2012
 	-serialize and deserialize get_range_slice requests properly
 	-add logic to get_slice so it properly understands equalities (less_than_equal, equal, or greater_than_equal)
+
+0.04	October 10, 2012
+	-fixes a bunch of packing and unpacking issues
+	-returns more meaningful errors (but this could still use work)
+	-includes a multiget_slice function
+	-supports column families with metadata and properly figures out what type of validation to use on each column name
+	-fixes timestamp bug to use microseconds to keep up with changes to cql in 1.1.x releases of cassandra
+	-fixes unpacking counter columns correctly
