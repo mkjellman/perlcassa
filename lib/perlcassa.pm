@@ -649,7 +649,6 @@ sub bulk_insert() {
 	$self->client_setup('keyspace' => $keyspace, 'columnfamily' => $columnfamily);
 	my $client = $self->{client};
 
-
 	my %columns = %$columns;
 	my %packedbulk;
 	foreach my $value (sort(keys(%columns))) {
@@ -674,6 +673,10 @@ sub bulk_insert() {
 		$column->{name} = $key;
 		$column->{value} = $packedbulk{$key};
 		$column->{timestamp} = ustime;
+
+		if (defined($ttl)) {
+			$column->{ttl} = $ttl;
+		}
 
 		# create a ColumnOrSuperColumn object to put the Column in
 		my $c_or_sc = new Cassandra::ColumnOrSuperColumn();
