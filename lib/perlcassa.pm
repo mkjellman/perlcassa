@@ -1509,20 +1509,89 @@ sub get_range_slices() {
 				$tmpfinish_key = $key_finish;
 			}
 
-			#make a request from $tmpmin_key up to the buffer
-			my $sliceres = $self->_call_get_range_slices(
-				keyspace	=> $keyspace,
-				column_family 	=> $column_family,
-				column_start	=> $$column_slicestart,
-				column_end	=> $$column_slicefinish,
-				key_start	=> $tmpstart_key,
-				key_end		=> $tmpfinish_key,
-				column_max_count=> $column_max_count,
-				key_max_count	=> $buffer_size,
-				reversed	=> $reversed,
-				consistencylevel=> $consistencylevel,
-				order		=> \@{$return{'**order**'}}
-			);
+			# if the user provided a column_max_count smaller than buffer size, use that
+			my $tmp_column_max_count;
+			if ($column_max_count < $buffer_size) {
+				$tmp_column_max_count = $column_max_count;
+			} else {
+				$tmp_column_max_count = $buffer_size; 
+			}
+
+			# we need to page the columns
+			my $sliceres;
+			if ($column_max_count > 1024) {
+				#call one key at a time 
+				$sliceres = $self->_call_get_range_slices(
+					keyspace	=> $keyspace,
+					column_family 	=> $column_family,
+					column_start	=> $$column_slicestart,
+					column_end	=> $$column_slicefinish,
+					key_start	=> $tmpstart_key,
+					key_end		=> $tmpfinish_key,
+					column_max_count=> $tmp_column_max_count,
+					key_max_count	=> $key_max_count,
+					reversed	=> $reversed,
+					consistencylevel=> $consistencylevel,
+					order		=> \@{$return{'**order**'}}
+				);
+
+				#buffer $buffer_size keys at a time the columns
+				foreach my $key (keys(%$sliceres)) {
+					next if $key eq '**order**';
+					my %tt = %$sliceres;
+
+					my $colbuffinished = 0;
+
+					while ($colbuffinished == 0) {
+						my $lastcol = pop(@{$tt{$key}});
+						my %lastcol_hash = %$lastcol;
+						my $lastcol_name = $lastcol_hash{name}[0];
+						
+						my $sub_sliceres = $self->_call_get_range_slices(
+							keyspace 	=> $keyspace,
+							column_family	=> $column_family,
+							column_start	=> $lastcol_name,
+							column_end	=> '',
+							key_start	=> $key,
+							key_end		=> $key,
+							column_max_count=> $buffer_size,
+							key_max_count 	=> $key_max_count,
+							reversed	=> $reversed,
+							consistencylevel=> $consistencylevel,
+							order		=> \@{$return{'**order**'}}
+						);
+
+						my %temp_tt = %$sub_sliceres;
+						foreach my $col (@{$temp_tt{$key}}) {
+							push @{$tt{$key}}, $col; 
+						}
+
+						if ($self->{debug} == 1) {
+							print STDERR "DEBUG: buffered $buffer_size keys for a multiget_slice\n";
+						}
+
+						if (scalar(@{$temp_tt{$key}}) < 1024 || scalar(@{$tt{$key}}) >= $column_max_count) {
+							$colbuffinished = 1;
+						}
+					}
+
+				}
+			} else {
+				#make a request from $tmpmin_key up to the buffer
+				$sliceres = $self->_call_get_range_slices(
+					keyspace	=> $keyspace,
+					column_family 	=> $column_family,
+					column_start	=> $$column_slicestart,
+					column_end	=> $$column_slicefinish,
+					key_start	=> $tmpstart_key,
+					key_end		=> $tmpfinish_key,
+					column_max_count=> $column_max_count,
+					key_max_count	=> $buffer_size,
+					reversed	=> $reversed,
+					consistencylevel=> $consistencylevel,
+					order		=> \@{$return{'**order**'}}
+				);
+			}
 
 			my %tt = %$sliceres;
 			%return = (%return, %tt);
