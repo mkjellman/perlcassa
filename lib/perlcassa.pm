@@ -121,7 +121,7 @@ Michael Kjellman, mkjellman@barracuda.com
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2012 Michael Kjellman
+Copyright 2013 Michael Kjellman
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
