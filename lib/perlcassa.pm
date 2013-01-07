@@ -10,59 +10,58 @@ v0.041
 
 =head1 SYNOPSIS
 
-use perlcassa;
-
-my $obj = new perlcassa(
-	'columnfamily' 	=> 'myCF',
-	'keyspace' 	=> 'myKeyspace',
-	'hosts'		=> ['host1.cassandra.local', 'host2.cassandra.local', 'host3.cassandra.local'],
-	
-	#optional
-	'write_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
-	'read_consistency_level'  => Cassandra::ConsistencyLevel::QUORUM,
-	'port'			  => '9160'
-);
-
-my %composite = ('values' => ['name_pt1', 'name_pt2']);
-
-$obj->insert(
-	'key'		=> 'myKey',
-	'columnname'	=> \%composite,
-	'value'		=> 'myVal'
-);
-
-$obj->get(
-	'key'		=> 'myKey',
-	'columnname'	=> 'myColumn'
-);
-
-$obj->get_slice(
-	'key'		=> 'myKey',
-	'start'		=> ['name_pt1'],
-	'finish'	=> ['name_pt2','name_pt2_c'],
-	'start_equality' => 'equal', #optional (defaults to equal, options: equal, less_than_equal, or greater_than_equal)
-	'finish_equality'=> 'greater_than_equal' #optional (defaults to greater_than_equal, options: equal, less_than_equal, or greater_than_equal)
-);
-
-$obj->get_range_slices(
-	key_start => '',
-	key_finish => '',
-	column_start => ['colpt1','a'],
-	column_finish => ['thiscol'],
-	key_max_count => 10000,
-	buffer_size => 100
-);
-
-my %bulk = (
-	#value => [columnname]
-	'test'  => ['name_pt1', 'name_pt2'],
-	'test2' => ['name_pt3', 'name_pr4']
-);
-
-$obj->bulk_insert(
-	'key'	  => 'testkey'
-	'columns' => \%bulk
-);
+    use perlcassa;
+    
+    my $obj = new perlcassa(
+        'columnfamily' => 'myCF',
+        'keyspace' => 'myKeyspace',
+        'hosts' => ['host1.cassandra.local', 'host2.cassandra.local', 'host3.cassandra.local'],
+        #optional
+        'write_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
+        'read_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
+        'port' => '9160'
+    );
+    
+    my %composite = ('values' => ['name_pt1', 'name_pt2']);
+    
+    $obj->insert(
+        'key' => 'myKey',
+        'columnname' => \%composite,
+        'value' => 'myVal'
+    );
+    
+    $obj->get(
+        'key' => 'myKey',
+        'columnname' => 'myColumn'
+    );
+    
+    $obj->get_slice(
+        'key' => 'myKey',
+        'start' => ['name_pt1'],
+        'finish' => ['name_pt2','name_pt2_c'],
+        'start_equality' => 'equal', #optional (defaults to equal, options: equal, less_than_equal, or greater_than_equal)
+        'finish_equality' => 'greater_than_equal' #optional (defaults to greater_than_equal, options: equal, less_than_equal, or greater_than_equal)
+    );
+    
+    $obj->get_range_slices(
+        key_start => '',
+        key_finish => '',
+        column_start => ['colpt1','a'],
+        column_finish => ['thiscol'],
+        key_max_count => 10000,
+        buffer_size => 100
+    );
+    
+    my %bulk = (
+        #value => [columnname]
+        'test' => ['name_pt1', 'name_pt2'],
+        'test2' => ['name_pt3', 'name_pr4']
+    );
+    
+    $obj->bulk_insert(
+        'key' => 'testkey'
+        'columns' => \%bulk
+    );
 
 =head1 REQUIRES
 
@@ -76,16 +75,13 @@ Nothing
 
 perlcassa is a native Perl client for interfacing with Apache Cassandra. It is essentially an API for Apache Thrift. It intelligently deals with CompositeType columns and ValidationClasses and encodes and packs them appropriately for the columnfamily specified. perlcassa deals with connection pooling, automatic retrying of insertions, automatic serialization and deserialization of primitive data types to pass column validation classes and more.
 
-Although other Perl Cassandra clients exist such as Cassandra::Lite and Net::Cassandra they have not been updated for many of the changes in Cassandra releases >0.80. They al
-so do not serialize and deserialize data making them not much more than an abstraction of the base Thrift calls. In my experence the difficulty lies in validation classes and being f
-ault tolerant, not abstracting the Thrift code.
+Although other Perl Cassandra clients exist such as Cassandra::Lite and Net::Cassandra they have not been updated for many of the changes in Cassandra releases >0.80. They also do not serialize and deserialize data making them not much more than an abstraction of the base Thrift calls. In my experence the difficulty lies in validation classes and being fault tolerant, not abstracting the Thrift code.
 
 The module name perlcassa follows the naming convention of other Cassandra clients such as phpcassa and pycassa. This module is included on CPAN for convinence however, please see https://github.com/mkjellman/perlcassa for active development.
 
 Note: This package does not support SuperColumns. Please look into CompositeType Comparators instead.
 
 =head1 METHODS
-
 
 =head2 Creation
 
@@ -96,12 +92,24 @@ Note: This package does not support SuperColumns. Please look into CompositeType
 Creates a new Apache Cassandra Perl Client
 
 =back
+
 =head1 TODO
 
-* better documentation
-* better handling thrift exceptions to try from another provided Cassandra instance/host automagically
-* general performance optimizations
-* auto retry failures where the node is up when the client is created but there is an exception such as a timeout on insert
+=over 4
+
+=item *
+better documentation
+
+=item *
+better handling thrift exceptions to try from another provided Cassandra instance/host automagically
+
+=item *
+general performance optimizations
+
+=item *
+auto retry failures where the node is up when the client is created but there is an exception such as a timeout on insert
+
+=back
 
 =head1 ACKNOWLEDGEMENTS
 
