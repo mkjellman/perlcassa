@@ -8672,6 +8672,10 @@ sub recv_get{
     return $result->{success};
   }
   if (defined $result->{ire}) {
+    # perlcassa modification for better errors
+    use Data::Dumper;
+    print STDERR Dumper($result->{ire});
+    # end perlcassa modification
     die $result->{ire};
   }
   if (defined $result->{nfe}) {
@@ -8980,6 +8984,10 @@ sub recv_get_range_slices{
     return $result->{success};
   }
   if (defined $result->{ire}) {
+    # perlcassa modification for better errors
+    use Data::Dumper;
+    print STDERR Dumper($result->{ire});
+    # end perlcassa modification
     die $result->{ire};
   }
   if (defined $result->{ue}) {
