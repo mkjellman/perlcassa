@@ -143,6 +143,7 @@ use warnings;
 our $VERSION = '0.041';
 
 use perlcassa::Client qw/setup close_conn client_setup/;
+use perlcassa::CQL3Result;
 
 use Cassandra::Cassandra;
 use Cassandra::Constants;
@@ -291,6 +292,99 @@ sub column_family() {
 		die('[ERROR] This should never happen. Please file a bug report.');
 	}
 }
+
+##
+# the CQL3 exec call
+# 
+# $obj->exec("SELECT * FROM users WHERE state='UT' AND birth_year = 1970");
+#
+# $obj->exec("SELECT * FROM users WHERE state=:state AND birth_year = :by", {state => 'UT', by => 1970} );
+#
+# Arguments:
+#   query - a string specifying the query to be run
+#   params - a hash of parameters to be substituted into the query
+#   attr - a hash of attributes used to specify options. No options work currently
+#
+# Returns:
+#   a perlcassa:CQL3Result object
+##
+sub exec() {
+    my $self = shift;
+    my $query = shift;
+    my $params = shift;
+    my $attr = shift;
+
+    # Bind parameters
+    my $prepared_query = prepare_inline_cql3($query, $params);
+
+	my $keyspace = $self->{keyspace};
+	$self->client_setup('keyspace' => $keyspace);
+
+	my $client = $self->{client};
+
+	my $query_result;
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "CQL Query Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$query_result = $client->execute_cql3_query(
+            $prepared_query,
+            Cassandra::Compression::NONE,
+            Cassandra::ConsistencyLevel::ONE
+        );
+		alarm($alarm);
+	} else {
+		$query_result = $client->execute_cql3_query(
+            $prepared_query,
+            Cassandra::Compression::NONE,
+            Cassandra::ConsistencyLevel::ONE
+        );
+	}
+    my $resp = perlcassa::CQL3Result->new();
+    $resp->process_cql3_results($query_result);
+	return $resp;
+}
+
+##
+# Replace each :param_name with the quoted value of $params{param_name}
+# Note comments do not work, but string literals should.
+##
+sub prepare_inline_cql3 {
+    my $query = shift;
+    my $params = shift || {};
+    my $attr = shift || {};
+    my %h_params = %$params;
+
+    # Split on string literals. No nesting
+    my @split_query = split(/('[^']*'|"[^"]*")/, " ".$query." ");
+
+    # TODO split on comments as well
+    my @prepared;
+    for my $part (@split_query) {
+        if (defined($part)) {
+            # Check if it is string literal
+            if ($part =~ /^('|")/) {
+                push(@prepared, $part);
+            } else {
+                # Replace each parameter with quoted and escaped version
+                # Note this could probably be made faster if needed
+                # maybe rewritten for readability too...
+                while ($part =~ s/(\W):(\w+)(?=\W)/$1."'"._escape_quotes($h_params{$2})."'"/e) {}
+                push(@prepared, $part);
+            }
+        }
+    }
+    my $pq = join('', @prepared);
+    $pq =~ s/^\ |\ $//g; # remove the whitespace added at beginning
+    return $pq;
+}
+
+# CQL3 requires quotes to be escaped by doubling them.
+sub _escape_quotes() {
+    my $str = shift;
+    $str =~ s/'/''/g;
+    return $str;
+}
+
 
 #####################################################################################################
 # execute() allows you to run CQL queries against Apache Cassandra
