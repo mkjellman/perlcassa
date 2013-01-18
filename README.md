@@ -16,12 +16,15 @@ perlcassa can be installed by doing the usual:
 
 # SYNOPSIS
 
+```perl
     use perlcassa;
 
     my $obj = new perlcassa(
         'columnfamily' => 'myCF',
         'keyspace' => 'myKeyspace',
-        'hosts' => ['host1.cassandra.local', 'host2.cassandra.local', 'host3.cassandra.local'],
+        'hosts' => ['host1.cassandra.local',
+                     'host2.cassandra.local',
+                     'host3.cassandra.local'],
         #optional
         'write_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
         'read_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
@@ -69,6 +72,16 @@ perlcassa can be installed by doing the usual:
         'columns' => \%bulk
     );
 
+    my $result = $obj->exec(
+        "SELECT key, col01 FROM myKeyspace.myCF_CQL3 WHERE key = :key_value",
+        {key_value => 'mykey'}
+    );
+    my $row = $result->fetchone();
+    print "Row key, col01: ".$row->{key}->{value}.", ".$row->{col01}->{value}."\n";
+
+```
+
+
 # REQUIRES
 
 Perl5.10, Thrift::XS, Time::HiRes 
@@ -87,6 +100,13 @@ Note: This package does not support SuperColumns. Please look into CompositeType
 
 Documentation is light at this time and will be improved in the next version. For now please refer to the documentation available in POD format or look through the examples in the examples folder.
 
+# METHODS
+
+## Creation
+
+- new perlcassa()
+
+    Creates a new Apache Cassandra Perl Client
 
 # TODO
 
@@ -94,6 +114,7 @@ Documentation is light at this time and will be improved in the next version. Fo
 - better handling thrift exceptions to try from another provided Cassandra instance/host automagically
 - general performance optimizations
 - auto retry failures where the node is up when the client is created but there is an exception such as a timeout on insert
+- better CQL3 support
 
 # ACKNOWLEDGEMENTS
 

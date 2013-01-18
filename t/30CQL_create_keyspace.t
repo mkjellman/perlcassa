@@ -44,7 +44,3 @@ ok($res, "Create test table.");
 
 $dbh->finish();    
 
-
-
-
-

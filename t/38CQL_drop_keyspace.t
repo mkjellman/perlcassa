@@ -35,7 +35,3 @@ ok($res, "Drop testing keyspace ($test_keyspace).");
 
 $dbh->finish();    
 
-
-
-
-

@@ -9,24 +9,29 @@ our @EXPORT = qw(make_cql3_decoder);
 use Cassandra::Cassandra;
 use Cassandra::Constants;
 use Cassandra::Types;
+use Math::BigInt;
+use Math::BigFloat;
 
 use Data::Dumper;
 
 # XXX this is yanked from perlcassa.pm. it should only be in one place
 # hash that contains pack templates for ValidationTypes
-our %validation_map = (
-	'AsciiType'	=> 'A*',
-	'BooleanType'	=> 'C',
-	'BytesType' 	=> 'a*',
-	'DateType' 	=> 'N2',
-	'FloatType' 	=> 'f',
-	'Int32Type' 	=> 'N',
-	'IntegerType' 	=> 'N2',
-	'LongType' 	=> 'N2',
-	'UTF8Type' 	=> 'a*',
-	'UUIDType'	=> 'S'
+our %simple_unpack = (
+	'AsciiType' => 'A*',
+	'BooleanType' => 'C',
+	'BytesType' => 'a*',
+	'DateType' => 'N2',
+	'FloatType' => 'f>',
+	'DoubleType' => 'd>',
+	'Int32Type' => 'l>',
+	'LongType' => 'q>',
+	'UTF8Type' => 'a*',
+	'UUIDType' => 'S'
 );
-
+our %complicated_unpack = (
+	'IntegerType' => \&unpack_IntegerType,
+    'DecimalType' => \&unpack_DecimalType,
+);
 
 sub new {
     my ($class, %opt) = @_;
@@ -82,9 +87,6 @@ sub decode_row {
 sub decode_column {
     my $self = shift;
     my $column = shift;
-    if (!defined($column->{value})) {
-        die("[ERROR] The value to decode must be defined.");
-    }
 
     my $packed_value = $column->{value};
     my $column_name = $column->{name} || undef;
@@ -93,14 +95,17 @@ sub decode_column {
         $data_type = $self->{metadata}->{value_types}->{$column_name};
         $data_type =~ s/org\.apache\.cassandra\.db\.marshal\.//;
     }
+    my $value = undef;
+    if (defined($column->{value})) {
+        $value = unpack_val($packed_value, $data_type),
+    }
     my $ret = {
         ttl => $column->{ttl},
         timestamp => $column->{timestamp},
-        value => unpack_val($packed_value, $data_type),
+        value => $value,
     };
     return $ret;
 }
-
 
 ##
 # Used to unpack values based on a pased in data type. This call will die if
@@ -117,8 +122,57 @@ sub unpack_val {
     my $packed_value = shift;
     my $data_type = shift;
 
-    my $unpack_str = $validation_map{$data_type} 
-        or die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
-    my $unpacked = unpack($unpack_str, $packed_value);
+    my $unpacked;
+    if (defined($simple_unpack{$data_type})) {
+        $unpacked = unpack($simple_unpack{$data_type}, $packed_value);
+    } else {
+        # It is a complicated type
+        my $unpack_sub;
+        if (defined($complicated_unpack{$data_type})) {
+            $unpack_sub = $complicated_unpack{$data_type}
+        } else {
+            die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
+        }
+        # TODO IntegerType need to be decoded as Math::BigInt
+        $unpacked = $unpack_sub->($packed_value);
+    }
     return $unpacked;
 }
+
+# Convert a hex string to a signed bigint
+sub hex_to_bigint {
+    my $sign = shift;
+    my $hex = shift;
+    my $ret;
+    if ($sign) {
+        # Flip the bits... Then flip again... 
+        # I think Math::BigInt->bnot() is broken
+        $hex =~ tr/0123456789abcdef/fedcba9876543210/;
+        $ret = Math::BigInt->new("0x".$hex)->bnot();
+    } else {
+        $ret = Math::BigInt->new("0x".$hex);
+    }
+    return $ret;
+}
+
+# Unpack arbitrary precision int
+# Returns a Math::BigInt
+sub unpack_IntegerType {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my $ret = hex_to_bigint(unpack("B1XH*", $packed_value));
+    return $ret;
+}
+
+# Unpack arbitrary precision decimal
+# Returns a Math::BigFloat
+sub unpack_DecimalType {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my ($exp, $sign, $hex) = unpack("NB1XH*", $packed_value);
+    my $mantissa = hex_to_bigint($sign, $hex);
+    my $ret = Math::BigFloat->new($mantissa."E-".$exp);
+    return $ret;
+}
+
+1;
