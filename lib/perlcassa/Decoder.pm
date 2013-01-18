@@ -93,7 +93,7 @@ sub decode_column {
     my $data_type = $self->{metadata}->{default_value_type};
     if (defined($column_name)) {
         $data_type = $self->{metadata}->{value_types}->{$column_name};
-        $data_type =~ s/org\.apache\.cassandra\.db\.marshal\.//;
+        $data_type =~ s/org\.apache\.cassandra\.db\.marshal\.//g;
     }
     my $value = undef;
     if (defined($column->{value})) {
@@ -125,16 +125,15 @@ sub unpack_val {
     my $unpacked;
     if (defined($simple_unpack{$data_type})) {
         $unpacked = unpack($simple_unpack{$data_type}, $packed_value);
-    } else {
+    } elsif ($data_type =~ /^(List|Map|Set)Type/) {
+        # Need to unpack a collection of values
+        $unpacked = unpack_collection($packed_value, $data_type);
+    } elsif (defined($complicated_unpack{$data_type})) {
         # It is a complicated type
-        my $unpack_sub;
-        if (defined($complicated_unpack{$data_type})) {
-            $unpack_sub = $complicated_unpack{$data_type}
-        } else {
-            die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
-        }
-        # TODO IntegerType need to be decoded as Math::BigInt
+        my $unpack_sub = $complicated_unpack{$data_type};
         $unpacked = $unpack_sub->($packed_value);
+    } else {
+            die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
     }
     return $unpacked;
 }
@@ -173,6 +172,54 @@ sub unpack_DecimalType {
     my $mantissa = hex_to_bigint($sign, $hex);
     my $ret = Math::BigFloat->new($mantissa."E-".$exp);
     return $ret;
+}
+
+# Unpack a collection type. List, Map, or Set
+# Returns:
+#   array - for list
+#   array - for set
+#   hash - for map
+#
+sub unpack_collection {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my $unpacked;
+    my ($base_type, $inner_type) = ($data_type =~ /^([^)]*)\(([^)]*)\)/);
+
+    # "nX2n/( ... )"
+    # Note: the preceeding is the basic template for collections.
+    # The template code grabs a 16-bit unsigned value, which is the number of
+    # items/pairs in the collection. Then it goes backward 2 bytes (16 bits)
+    # and grabs 16-bit value again, but uses it to know how many items/pairs
+    # to decode
+    if ($base_type =~ /^(List|Set)Type/) {
+        # Handle the list and set. They are bascally the same
+        # Each item is unpacked as raw bytes, then unpacked by our normal
+        # routine
+        my ($count, @values) = unpack("nX2n/(n/a)", $packed_value);
+        $unpacked = [];
+        for (my $i = 0; $i < $count; $i++) {
+            my $v = unpack_val($values[$i], $inner_type);
+            push(@{$unpacked}, $v);
+        }
+
+    } elsif ($base_type =~ /^MapType/) {
+        # Handle the map types
+        # Each pair is unpacked as two groups of raw bytes, then unpacked by
+        # our normal routines
+        my ($count, @values) = unpack("nX2n/(n/a n/a)", $packed_value);
+        my @inner_types = split(",", $inner_type);
+        $unpacked = {};
+        for (my $i = 0; $i < $count; $i++) {
+            my $k = unpack_val($values[($i*2+0)], $inner_types[0]);
+            my $v = unpack_val($values[($i*2+1)], $inner_types[1]);
+            $unpacked->{$k} = $v;
+        }
+
+    } else {
+        die("[BUG] You broke it. File a bug... What is '$data_type'?");
+    }
+    return $unpacked;
 }
 
 1;

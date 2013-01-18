@@ -17,23 +17,19 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 19;
+plan tests => 28;
 
 require_ok( 'perlcassa' );
 
-my $dbh;
-
-$dbh = new perlcassa(
+my $dbh = new perlcassa(
     'hosts' => [$test_host],
     'keyspace' => $test_keyspace,
 );
-
 my $res;
 
+# Create table for testing normal types
 $res = $dbh->exec("CREATE TABLE $test_keyspace.all_types ( 
     pk text PRIMARY KEY,
-    first_name text,
-    last_name text,
     t_ascii ascii,
     t_bigint bigint,
     t_blob blob,
@@ -50,7 +46,7 @@ $res = $dbh->exec("CREATE TABLE $test_keyspace.all_types (
     t_varchar varchar,
     t_varint varint,
 ) WITH COMPACT STORAGE");
-ok($res, "Create test table.");
+ok($res, "Create test table all_types.");
 
 # Check the text types
 $res = $dbh->exec("INSERT INTO all_types (pk, t_ascii, t_text, t_varchar) VALUES ('strings_test', 'v_ascii', 'v_text', 'v_v\xC3\xA1rchar')");
@@ -86,6 +82,7 @@ is($row_fp1->{t_float}->{value}, 9.875, "Check float value.");
 is($row_fp1->{t_decimal}->{value}, $float1_s,
     "Check decimal (arbitrary precision float) value.");
 
+# Check negative floating point types
 my $float2_s = '-0.00000000000000000000000000167262177';
 my $float2 = Math::BigFloat->new($float2_s);
 my $param_fp2 = { dv => -0.000012345, fv => -0.5, av => $float2 };
@@ -110,10 +107,11 @@ $res = $dbh->exec("SELECT pk, t_bigint, t_int, t_varint FROM all_types WHERE pk 
 my $row_int1 = $res->fetchone();
 is($row_int1->{t_bigint}->{value}, 8589934592, "Check bigint (64-bit int) value.");
 is($row_int1->{t_int}->{value}, 7, "Check int (32-bit int) value.");
-is($row_int1->{t_varint}->{value}, 
-    "1000000000000000000001", "Check varint (arbitrary precision) value.");
+is($row_int1->{t_varint}->{value}, "1000000000000000000001",
+    "Check varint (arbitrary precision) value.");
 
-my $varint_v2 = Math::BigInt->new("1000000000000000000001");
+# Check negative integer values
+my $varint_v2 = Math::BigInt->new("-1000000000000000000001");
 my $param_int2 = {
     biv => -8589934592,
     iv => -7,
@@ -124,32 +122,75 @@ $res = $dbh->exec("SELECT pk, t_bigint, t_int, t_varint FROM all_types WHERE pk 
 my $row_int2 = $res->fetchone();
 is($row_int2->{t_bigint}->{value}, -8589934592, "Check negative bigint (64-bit int) value.");
 is($row_int2->{t_int}->{value}, -7, "Check negative int (32-bit int) value.");
-is($row_int2->{t_varint}->{value}, 
-    "1000000000000000000001", "Check varint (arbitrary precision) value.");
+is($row_int2->{t_varint}->{value}, "-1000000000000000000001",
+    "Check negative varint (arbitrary precision) value.");
+
+
+# Create Collections Table for test
+$res = $dbh->exec("CREATE TABLE collection_types (pk text PRIMARY KEY, t_list list<int>, t_set set<int>, t_map map<int, int>)");
+ok($res, "Create test table collection_types.");
+
+# Test empty collections
+$res = $dbh->exec("INSERT INTO collection_types (pk) VALUES ('empty_collection_test')");
+$res = $dbh->exec("SELECT pk, t_list, t_set, t_map FROM collection_types WHERE pk = 'empty_collection_test'");
+my $row_ec = $res->fetchone();
+is_deeply($row_ec->{t_list}->{value}, undef, "Check list collection type (empty).");
+is_deeply($row_ec->{t_map}->{value}, undef, "Check map collection type (empty).");
+is_deeply($row_ec->{t_set}->{value}, undef, "Check set collection type (empty).");
+
+# Test 3 element list
+$res = $dbh->exec("INSERT INTO collection_types (pk, t_list) VALUES ('list_test', [91, 92, 93])");
+$res = $dbh->exec("SELECT pk, t_list FROM collection_types WHERE pk = 'list_test'");
+my $row_l = $res->fetchone();
+is_deeply($row_l->{t_list}->{value}, [91,92,93],
+    "Check list collection type.");
+
+# Test set
+$res = $dbh->exec("INSERT INTO collection_types (pk, t_set) VALUES ('set_test', {3, 1, 4, 5, 9})");
+$res = $dbh->exec("SELECT pk, t_set FROM collection_types WHERE pk = 'set_test'");
+my $row_s = $res->fetchone();
+is_deeply($row_s->{t_set}->{value}, [1,3,4,5,9],
+    "Check set collection type.");
+
+# Test map
+$res = $dbh->exec("INSERT INTO collection_types (pk, t_map) VALUES ('map_test', {15: 18, 16: 5, 17: 13, 18: 21, 19: 21})");
+$res = $dbh->exec("SELECT pk, t_map FROM collection_types WHERE pk = 'map_test'");
+my $row_m = $res->fetchone();
+is_deeply($row_m->{t_map}->{value}, {15=>18, 16=>5, 17=>13, 18=>21, 19=>21},
+    "Check map collection type.");
+
+# Clean up our tables
+$res = $dbh->exec("DROP TABLE all_types");
+ok($res, "Drop test table all_types.");
+$res = $dbh->exec("DROP TABLE collection_types");
+ok($res, "Drop test table collection_types.");
+
+
 
 # Still need to implement/fix and test
-#    i_blob => 'v_blob',
-#    i_inet => '10.9.8.7',
-#    i_text => 'v_text',
-#    i_timestamp => 'v_timestamp',
-#    i_timeuuid => 'v_timeuuid',
-#    i_uuid => 'v_uuid',
-#    i_varchar => 'v_varchar',
-# Collections and counters
+#  blob
+#  inet
+#  timestamp
+#  timeuuid
+#  uuid
+#  counters
+
+# Partial Support. UTF8 does not work correctly
+#  text
+#  varchar
 
 # Working 
-#    i_ascii => 'v_ascii',
-#    i_bigint => 'v_bigint',
-#    i_boolean => 1,
-#    i_decimal => 'v_decimal',
-#    i_double => 12.5,
-#    i_float => 900.5
-#    i_int => 'v_int',
-#    i_varint => 'v_varint',
-
-# Partial Support
-#    i_text => 'v_text',
-#    i_varchar => 'v_varchar',
+#  ascii
+#  bigint
+#  boolean
+#  decimal
+#  double
+#  float
+#  int
+#  varint
+#  map
+#  set
+#  list
 
 $dbh->finish();    
 
