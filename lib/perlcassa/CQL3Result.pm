@@ -36,6 +36,7 @@ sub process_cql3_results {
     my $ret = 1;
     if ($self->{debug}) {
         $self->{response} = $response;
+        print STDERR "Response: ".Dumper($response);
     }
 
     $self->{type} = $response->{type};

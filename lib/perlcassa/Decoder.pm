@@ -9,24 +9,29 @@ our @EXPORT = qw(make_cql3_decoder);
 use Cassandra::Cassandra;
 use Cassandra::Constants;
 use Cassandra::Types;
+use Math::BigInt;
+use Math::BigFloat;
 
 use Data::Dumper;
 
 # XXX this is yanked from perlcassa.pm. it should only be in one place
 # hash that contains pack templates for ValidationTypes
-our %validation_map = (
-	'AsciiType'	=> 'A*',
-	'BooleanType'	=> 'C',
-	'BytesType' 	=> 'a*',
-	'DateType' 	=> 'N2',
-	'FloatType' 	=> 'f',
-	'Int32Type' 	=> 'N',
-	'IntegerType' 	=> 'N2',
-	'LongType' 	=> 'N2',
-	'UTF8Type' 	=> 'a*',
-	'UUIDType'	=> 'S'
+our %simple_unpack = (
+	'AsciiType' => 'A*',
+	'BooleanType' => 'C',
+	'BytesType' => 'a*',
+	'DateType' => 'N2',
+	'FloatType' => 'f>',
+	'DoubleType' => 'd>',
+	'Int32Type' => 'l>',
+	'LongType' => 'q>',
+	'UTF8Type' => 'a*',
+	'UUIDType' => 'S'
 );
-
+our %complicated_unpack = (
+	'IntegerType' => \&unpack_IntegerType,
+    'DecimalType' => \&unpack_DecimalType,
+);
 
 sub new {
     my ($class, %opt) = @_;
@@ -82,25 +87,25 @@ sub decode_row {
 sub decode_column {
     my $self = shift;
     my $column = shift;
-    if (!defined($column->{value})) {
-        die("[ERROR] The value to decode must be defined.");
-    }
 
     my $packed_value = $column->{value};
     my $column_name = $column->{name} || undef;
     my $data_type = $self->{metadata}->{default_value_type};
     if (defined($column_name)) {
         $data_type = $self->{metadata}->{value_types}->{$column_name};
-        $data_type =~ s/org\.apache\.cassandra\.db\.marshal\.//;
+        $data_type =~ s/org\.apache\.cassandra\.db\.marshal\.//g;
+    }
+    my $value = undef;
+    if (defined($column->{value})) {
+        $value = unpack_val($packed_value, $data_type),
     }
     my $ret = {
         ttl => $column->{ttl},
         timestamp => $column->{timestamp},
-        value => unpack_val($packed_value, $data_type),
+        value => $value,
     };
     return $ret;
 }
-
 
 ##
 # Used to unpack values based on a pased in data type. This call will die if
@@ -117,8 +122,104 @@ sub unpack_val {
     my $packed_value = shift;
     my $data_type = shift;
 
-    my $unpack_str = $validation_map{$data_type} 
-        or die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
-    my $unpacked = unpack($unpack_str, $packed_value);
+    my $unpacked;
+    if (defined($simple_unpack{$data_type})) {
+        $unpacked = unpack($simple_unpack{$data_type}, $packed_value);
+    } elsif ($data_type =~ /^(List|Map|Set)Type/) {
+        # Need to unpack a collection of values
+        $unpacked = unpack_collection($packed_value, $data_type);
+    } elsif (defined($complicated_unpack{$data_type})) {
+        # It is a complicated type
+        my $unpack_sub = $complicated_unpack{$data_type};
+        $unpacked = $unpack_sub->($packed_value);
+    } else {
+            die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
+    }
     return $unpacked;
 }
+
+# Convert a hex string to a signed bigint
+sub hex_to_bigint {
+    my $sign = shift;
+    my $hex = shift;
+    my $ret;
+    if ($sign) {
+        # Flip the bits... Then flip again... 
+        # I think Math::BigInt->bnot() is broken
+        $hex =~ tr/0123456789abcdef/fedcba9876543210/;
+        $ret = Math::BigInt->new("0x".$hex)->bnot();
+    } else {
+        $ret = Math::BigInt->new("0x".$hex);
+    }
+    return $ret;
+}
+
+# Unpack arbitrary precision int
+# Returns a Math::BigInt
+sub unpack_IntegerType {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my $ret = hex_to_bigint(unpack("B1XH*", $packed_value));
+    return $ret;
+}
+
+# Unpack arbitrary precision decimal
+# Returns a Math::BigFloat
+sub unpack_DecimalType {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my ($exp, $sign, $hex) = unpack("NB1XH*", $packed_value);
+    my $mantissa = hex_to_bigint($sign, $hex);
+    my $ret = Math::BigFloat->new($mantissa."E-".$exp);
+    return $ret;
+}
+
+# Unpack a collection type. List, Map, or Set
+# Returns:
+#   array - for list
+#   array - for set
+#   hash - for map
+#
+sub unpack_collection {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my $unpacked;
+    my ($base_type, $inner_type) = ($data_type =~ /^([^)]*)\(([^)]*)\)/);
+
+    # "nX2n/( ... )"
+    # Note: the preceeding is the basic template for collections.
+    # The template code grabs a 16-bit unsigned value, which is the number of
+    # items/pairs in the collection. Then it goes backward 2 bytes (16 bits)
+    # and grabs 16-bit value again, but uses it to know how many items/pairs
+    # to decode
+    if ($base_type =~ /^(List|Set)Type/) {
+        # Handle the list and set. They are bascally the same
+        # Each item is unpacked as raw bytes, then unpacked by our normal
+        # routine
+        my ($count, @values) = unpack("nX2n/(n/a)", $packed_value);
+        $unpacked = [];
+        for (my $i = 0; $i < $count; $i++) {
+            my $v = unpack_val($values[$i], $inner_type);
+            push(@{$unpacked}, $v);
+        }
+
+    } elsif ($base_type =~ /^MapType/) {
+        # Handle the map types
+        # Each pair is unpacked as two groups of raw bytes, then unpacked by
+        # our normal routines
+        my ($count, @values) = unpack("nX2n/(n/a n/a)", $packed_value);
+        my @inner_types = split(",", $inner_type);
+        $unpacked = {};
+        for (my $i = 0; $i < $count; $i++) {
+            my $k = unpack_val($values[($i*2+0)], $inner_types[0]);
+            my $v = unpack_val($values[($i*2+1)], $inner_types[1]);
+            $unpacked->{$k} = $v;
+        }
+
+    } else {
+        die("[BUG] You broke it. File a bug... What is '$data_type'?");
+    }
+    return $unpacked;
+}
+
+1;
