@@ -49,7 +49,7 @@ sub process_cql3_results {
         # Decode each row into a result
         foreach my $row (@{$response->{rows}}) {
             my %unpacked_row = $decoder->decode_row($row);
-            push($self->{result}, \%unpacked_row);
+            push(@{$self->{result}}, \%unpacked_row);
         }
         $ret = 0;
     } elsif ($self->{type} == Cassandra::CqlResultType::VOID) {
