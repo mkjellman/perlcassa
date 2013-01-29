@@ -26,11 +26,13 @@ our %simple_unpack = (
 	'Int32Type' => 'l>',
 	'LongType' => 'q>',
 	'UTF8Type' => 'a*',
-	'UUIDType' => 'S'
+	'UUIDType' => 'S',
+	'CounterColumnType' => 'q>'
 );
+
 our %complicated_unpack = (
 	'IntegerType' => \&unpack_IntegerType,
-    'DecimalType' => \&unpack_DecimalType,
+	'DecimalType' => \&unpack_DecimalType,
 );
 
 sub new {
