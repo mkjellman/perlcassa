@@ -162,7 +162,8 @@ sub unpack_IntegerType {
     my $packed_value = shift;
     my $data_type = shift;
     my $ret = hex_to_bigint(unpack("B1XH*", $packed_value));
-    return $ret;
+    my $unpacked_int = $ret->bstr();
+    return $unpacked_int;
 }
 
 # Unpack arbitrary precision decimal
@@ -173,7 +174,8 @@ sub unpack_DecimalType {
     my ($exp, $sign, $hex) = unpack("NB1XH*", $packed_value);
     my $mantissa = hex_to_bigint($sign, $hex);
     my $ret = Math::BigFloat->new($mantissa."E-".$exp);
-    return $ret;
+    my $unpacked_dec = $ret->bstr();
+    return $unpacked_dec;
 }
 
 # Unpack a collection type. List, Map, or Set
