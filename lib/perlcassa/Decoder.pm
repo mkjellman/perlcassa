@@ -3,14 +3,15 @@ package perlcassa::Decoder;
 use strict;
 use warnings;
 use base 'Exporter';
-
 our @EXPORT = qw(make_cql3_decoder);
+
+use Math::BigInt;
+use Math::BigFloat;
+use Socket;
 
 use Cassandra::Cassandra;
 use Cassandra::Constants;
 use Cassandra::Types;
-use Math::BigInt;
-use Math::BigFloat;
 
 use Data::Dumper;
 
@@ -33,6 +34,7 @@ our %simple_unpack = (
 our %complicated_unpack = (
 	'IntegerType' => \&unpack_IntegerType,
 	'DecimalType' => \&unpack_DecimalType,
+    'InetAddressType' => \&unpack_ipaddress,
 );
 
 sub new {
@@ -176,6 +178,24 @@ sub unpack_DecimalType {
     my $ret = Math::BigFloat->new($mantissa."E-".$exp);
     my $unpacked_dec = $ret->bstr();
     return $unpacked_dec;
+}
+
+# Unpack inet type
+# Returns a string
+sub unpack_ipaddress {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my $len = length($packed_value);
+    my $ret;
+    if ($len == 16) {
+        # Unpack ipv6 address
+        $ret = Socket::inet_ntop(Socket::AF_INET6, $packed_value);
+    } elsif ($len == 4) {
+        $ret = Socket::inet_ntop(Socket::AF_INET, $packed_value);
+    } else {
+        die("[ERROR] Invalid inet type.");
+    }
+    return $ret;
 }
 
 # Unpack a collection type. List, Map, or Set
