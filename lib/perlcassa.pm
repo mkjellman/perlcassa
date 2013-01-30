@@ -6,7 +6,7 @@ perlcassa - Perl Client for Apache Cassandra
 
 =head1 VERSION
 
-v0.041
+v0.05
 
 =head1 SYNOPSIS
 
@@ -70,7 +70,7 @@ v0.041
         {key_value => 'mykey'}
     );
     my $row = $result->fetchone();
-    print "Row key, col01: ".$row->{key}->{value}.", ".$row->{col01}->{value}."\n";
+    print "Row key, col01: ".$row->{key}.", ".$row->{col01}."\n";
 
 
 =head1 REQUIRES
@@ -126,11 +126,12 @@ better CQL3 support
 
 =head1 ACKNOWLEDGEMENTS
 
-This wouldn't have been possible without help from my friend and colleague BJ Black.
+This wouldn't have been possible without help from friend and colleague BJ Black.
 
 =head1 AUTHOR
 
 Michael Kjellman, mkjellman@barracuda.com
+Colin Blower, cblower@barracuda.com
 
 =head1 COPYRIGHT & LICENSE
 

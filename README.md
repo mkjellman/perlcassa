@@ -4,7 +4,7 @@ perlcassa - Perl Client for Apache Cassandra
 
 # VERSION
 
-v0.041
+v0.05
 
 ## INSTALLATION
 perlcassa can be installed by doing the usual:
@@ -77,7 +77,7 @@ perlcassa can be installed by doing the usual:
         {key_value => 'mykey'}
     );
     my $row = $result->fetchone();
-    print "Row key, col01: ".$row->{key}->{value}.", ".$row->{col01}->{value}."\n";
+    print "Row key, col01: ".$row->{key}.", ".$row->{col01}."\n";
 
 ```
 
@@ -118,11 +118,12 @@ Documentation is light at this time and will be improved in the next version. Fo
 
 # ACKNOWLEDGEMENTS
 
-This wouldn't have been possible without help from my friend and colleague BJ Black.
+This wouldn't have been possible without help from friend and colleague BJ Black.
 
 # AUTHOR
 
 Michael Kjellman, mkjellman@barracuda.com
+Colin Blower, cblower@barracuda.com
 
 # COPYRIGHT & LICENSE
 
