@@ -588,8 +588,14 @@ sub insert() {
 	};
 
 	if ($@) {
-		my %error = %{$@};
-		die("[ERROR] Insert was unsucessful: $error{why}");
+		my @errors = $@;
+		
+		if (defined($errors[0])) {
+			die("[ERROR] Insert was unsuccessful: @errors");
+		} else {
+			my %error = %{$@};
+			die("[ERROR] Insert was unsucessful: $error{why}");
+		}
 	}
 }
 
