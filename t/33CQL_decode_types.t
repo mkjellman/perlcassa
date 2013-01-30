@@ -17,7 +17,7 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 30;
+plan tests => 34;
 
 require_ok( 'perlcassa' );
 
@@ -170,6 +170,26 @@ $res = $dbh->exec("SELECT pk, t_map FROM collection_types WHERE pk = 'map_test'"
 my $row_m = $res->fetchone();
 is_deeply($row_m->{t_map}->{value}, {15=>18, 16=>5, 17=>13, 18=>21, 19=>21},
     "Check map collection type.");
+
+
+# Test getting ttl and timestamp
+$res = $dbh->exec("INSERT INTO all_types (pk, t_ascii) VALUES ( 'ttl_test', 'to be, or not to be') USING TTL 5");
+$res = $dbh->exec("SELECT pk, t_ascii, TTL(t_ascii) FROM all_types WHERE pk = 'ttl_test'");
+my $row_ttl = $res->fetchone();
+cmp_ok($row_ttl->{"ttl(t_ascii)"}, '<=', 5, "Check retrieving TTL.");
+
+$res = $dbh->exec("INSERT INTO all_types (pk, t_ascii) VALUES ('writetime_test', 'historic occasion') USING TIMESTAMP 1337842800000000");
+$res = $dbh->exec("SELECT pk, t_ascii, WRITETIME(t_ascii), TTL(t_ascii) FROM all_types WHERE pk = 'writetime_test'");
+my $row_ts = $res->fetchone();
+is($row_ts->{"writetime(t_ascii)"}, 1337842800000000, "Check timestamp/writetime support.");
+
+pass("Sleeping to allow TTL to expire.");
+sleep(6);
+$res = $dbh->exec("SELECT pk, t_ascii, WRITETIME(t_ascii), TTL(t_ascii) FROM all_types WHERE pk = 'ttl_test'");
+$row_ttl = $res->fetchone();
+is($row_ttl, undef, "Check TTL expiration.");
+
+
 
 # Clean up our tables
 $res = $dbh->exec("DROP TABLE all_types");
