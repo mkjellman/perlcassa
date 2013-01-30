@@ -25,3 +25,6 @@ Change History
 
 0.041	October 10, 2012
 	-Minor clarification changes to description in documentation as asked by 'Anonymous [anonymous@foto.ro1.torservers.net]'
+
+0.05	January 30, 2013
+	- Incompatible changes made to CQL3 results. Removed ttl and timestamp columns. Result columns now point directly to the values.
