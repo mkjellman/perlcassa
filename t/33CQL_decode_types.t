@@ -17,7 +17,7 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 28;
+plan tests => 30;
 
 require_ok( 'perlcassa' );
 
@@ -126,6 +126,18 @@ is($row_int2->{t_varint}->{value}, "-1000000000000000000001",
     "Check negative varint (arbitrary precision) value.");
 
 
+# Check inet type, both ipv4 and ipv6
+$res = $dbh->exec("INSERT INTO all_types (pk, t_inet) VALUES ( 'inet4_test', '10.9.8.7')");
+$res = $dbh->exec("SELECT pk, t_inet FROM all_types WHERE pk = 'inet4_test'");
+my $row_inet4 = $res->fetchone();
+is($row_inet4->{t_inet}->{value}, "10.9.8.7", "Check inet4 type.");
+
+$res = $dbh->exec("INSERT INTO all_types (pk, t_inet) VALUES ( 'inet6_test', '2001:db8:85a3:42:1000:8a2e:370:7334')");
+$res = $dbh->exec("SELECT pk, t_inet FROM all_types WHERE pk = 'inet6_test'");
+my $row_inet6 = $res->fetchone();
+is($row_inet6->{t_inet}->{value}, "2001:db8:85a3:42:1000:8a2e:370:7334", "Check inet6 type.");
+
+
 # Create Collections Table for test
 $res = $dbh->exec("CREATE TABLE collection_types (pk text PRIMARY KEY, t_list list<int>, t_set set<int>, t_map map<int, int>)");
 ok($res, "Create test table collection_types.");
@@ -169,7 +181,6 @@ ok($res, "Drop test table collection_types.");
 
 # Still need to implement/fix and test
 #  blob
-#  inet
 #  timestamp
 #  timeuuid
 #  uuid
@@ -186,6 +197,7 @@ ok($res, "Drop test table collection_types.");
 #  decimal
 #  double
 #  float
+#  inet
 #  int
 #  varint
 #  map
