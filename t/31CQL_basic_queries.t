@@ -72,10 +72,10 @@ $res = $dbh->exec("SELECT * FROM $test_keyspace.user_profiles WHERE user_id = :1
 is($res->{rowcount}, 1, "Select single row.");
 
 my $row = $res->fetchone();
-is($row->{user_id}->{value}, $param_03->{1}, "Check user_id.");
-is($row->{first_name}->{value}, $param_03->{2}, "Check first_name.");
-is($row->{last_name}->{value}, $param_03->{3}, "Check last_name.");
-is($row->{year_of_birth}->{value}, $param_03->{4}, "Check year_of_birth.");
+is($row->{user_id}, $param_03->{1}, "Check user_id.");
+is($row->{first_name}, $param_03->{2}, "Check first_name.");
+is($row->{last_name}, $param_03->{3}, "Check last_name.");
+is($row->{year_of_birth}, $param_03->{4}, "Check year_of_birth.");
 
 $dbh->finish();    
 

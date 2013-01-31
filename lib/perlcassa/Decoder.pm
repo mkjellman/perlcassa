@@ -103,12 +103,12 @@ sub decode_column {
     if (defined($column->{value})) {
         $value = unpack_val($packed_value, $data_type),
     }
-    my $ret = {
-        ttl => $column->{ttl},
-        timestamp => $column->{timestamp},
-        value => $value,
-    };
-    return $ret;
+    if (defined($column->{ttl}) || defined($column->{timestamp})) {
+        # The ttl and timestamp Cassandra::Column values are not
+        # defined when using CQL3 calls
+        die("[BUG] Cassandra returned a ttl or timestamp with a CQL3 column.");
+    }
+    return $value;
 }
 
 ##
