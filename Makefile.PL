@@ -24,6 +24,7 @@ WriteMakefile(
 	PREREQ_PM	=> {
 		'Thrift::XS' => '0',
 		'Class::Accessor' => '0',
-		'Time::HiRes'	=> '0'
+		'Time::HiRes'	=> '0',
+		'Socket6'	=> '0'
 	}
 );

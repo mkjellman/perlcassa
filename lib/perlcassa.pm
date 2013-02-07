@@ -190,8 +190,16 @@ sub ustime {
 sub new() {
 	my ($class, %opt) = @_;
 
-	if (!defined($opt{hosts})) {
+	if (!defined($opt{hosts}) && defined($opt{do_not_discover_peers})) {
 		die('you must provide at least one cassandra host');
+	}
+
+	if (defined($opt{hosts})) {
+		die('hosts has been depricated for seed_nodes. please create object with \'do_not_discover_peers\' if you want to still manually provide hosts');
+	}
+
+	if (!defined($opt{seed_nodes})) {
+		die('you must provide at least one seed_node or create the object with \'do_not_discover_peers\' and pass \'hosts\' in the object creation');
 	}
 
 	bless my $self = {
@@ -199,7 +207,8 @@ sub new() {
 		transport => undef,
 		protocol => undef,
 		socket => undef,
-		hosts => $opt{hosts}, # user provided list of all cassandra servers potentially avaliable for reads or writes
+		hosts => $opt{hosts}, # user provided list of all cassandra nodes potentially avaliable for reads or writes
+		seed_nodes => $opt{seed_nodes}, # user lists of cassandra nodes to contact to get all other peers in cluster 
 		port => $opt{port} || '9160',
 		keyspace => $opt{keyspace} || undef,
 		columnfamily => $opt{columnfamily} || undef,
@@ -213,7 +222,8 @@ sub new() {
 		availablehosts => {},
 		failure_thread_running => 0,
 		max_retry => $opt{max_retry} || 2, # max number of times to try and connect for this request
-		donotpack => $opt{donotpack} || 0 #will insert with raw values and not autopack values
+		donotpack => $opt{donotpack} || 0, #will insert with raw values and not autopack values
+		do_not_discover_peers => $opt{do_not_discover_peers} || undef
 	}, $class;
 
 	# generate the inital randomized server list
@@ -323,13 +333,10 @@ sub column_family() {
 #   a perlcassa:CQL3Result object
 ##
 sub exec() {
-    my $self = shift;
-    my $query = shift;
-    my $params = shift;
-    my $attr = shift;
+	my ($self, $query, $params) = @_;
 
-    # Bind parameters
-    my $prepared_query = prepare_inline_cql3($query, $params);
+	# Bind parameters
+	my $prepared_query = prepare_inline_cql3($query, $params);
 
 	my $keyspace = $self->{keyspace};
 	$self->client_setup('keyspace' => $keyspace);
@@ -341,20 +348,22 @@ sub exec() {
 		local $SIG{ALRM} = sub { die "CQL Query Timed Out"; };
 		my $alarm = alarm($self->{timeout});
 		$query_result = $client->execute_cql3_query(
-            $prepared_query,
-            Cassandra::Compression::NONE,
-            Cassandra::ConsistencyLevel::ONE
-        );
+			$prepared_query,
+			Cassandra::Compression::NONE,
+			Cassandra::ConsistencyLevel::ONE
+		);
 		alarm($alarm);
 	} else {
 		$query_result = $client->execute_cql3_query(
-            $prepared_query,
-            Cassandra::Compression::NONE,
-            Cassandra::ConsistencyLevel::ONE
-        );
+			$prepared_query,
+			Cassandra::Compression::NONE,
+			Cassandra::ConsistencyLevel::ONE
+		);
 	}
-    my $resp = perlcassa::CQL3Result->new();
-    $resp->process_cql3_results($query_result);
+
+	my $resp = perlcassa::CQL3Result->new();
+	$resp->process_cql3_results($query_result);
+
 	return $resp;
 }
 

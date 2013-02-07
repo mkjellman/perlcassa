@@ -11,6 +11,8 @@ use Thrift::Socket;
 use Thrift::FramedTransport;
 use Thrift::XS::BinaryProtocol;
 
+use Cassandra::Cassandra;
+
 use Time::HiRes qw ( gettimeofday );
 use threads;
 
@@ -26,6 +28,69 @@ sub generate_host_hashes() {
 	}
 }
 
+=item get_cassandra_nodes
+get all of the current nodes from the peers table and add them to our potentital C* hosts
+=cut
+sub get_cassandra_nodes() {
+	my $self = shift;
+
+	my ($client, $transport);
+	foreach my $seed_node (@{$self->{seed_nodes}}) {
+		# setup a temporary thrift client so we can use the seed node
+		# to get a list of current nodes in the cluster serving rpc/thrift requests 
+		my $socket = new Thrift::Socket($seed_node, 9160);
+		$transport = new Thrift::FramedTransport($socket,1024,1024);
+		my $protocol = new Thrift::XS::BinaryProtocol($transport);
+		$client = new Cassandra::CassandraClient($protocol);
+
+		eval {
+			$transport->open();
+		};
+
+		if ($@) {
+			print STDERR "Unable to connect to seed node $seed_node\n";
+			next;
+		} else {
+			last;
+		}
+	}
+
+	# execute the CQL3 query to get all of the avaliable peers from the system table
+	my $query = "SELECT * FROM system.peers";
+	my $params = ();
+	my $prepared_query = perlcassa::prepare_inline_cql3($query, $params);
+
+	my $qres;
+	local $SIG{ALRM} = sub { die "Getting seed nodes timed out"; };
+	my $alarm = alarm(10);
+	$qres = $client->execute_cql3_query(
+		$prepared_query,
+		Cassandra::Compression::NONE,
+		Cassandra::ConsistencyLevel::ONE
+	);
+	alarm($alarm);
+
+	$transport->close();
+
+	my $resp = perlcassa::CQL3Result->new();
+	$resp->process_cql3_results($qres);
+	my $result = $resp->{result};
+
+	my %cass_hosts = ();
+
+	# always favor the rpc_address unless it is 0.0.0.0 (bind to all address) in which case
+	# try to fall back to the system IP
+	foreach my $res (@{$result}) {
+		if($res->{rpc_address} && ($res->{rpc_address} ne "0.0.0.0")) {
+			$cass_hosts{$res->{rpc_address}} = 1;
+		} else {
+			$cass_hosts{$res->{peer}} = 1;
+		}		
+	}
+
+	return %cass_hosts;
+}
+
 #####################################################################################################
 # generate_server_list()
 # generate the round robbin load balancer pool with avaliable servers
@@ -33,8 +98,15 @@ sub generate_host_hashes() {
 sub generate_server_list() {
 	my $self = shift;
 
-	my $tmpscalar = $self->{availablehosts};
-	my %hosts = %$tmpscalar;
+	my %hosts;
+	# if we were explicitly told to not try to discover our hosts use the hosts hash
+	# otherwise grab them all from the peers table
+	if (defined($self->{hosts}) && defined($self->{do_not_discover_peers})) {
+		my $tmpscalar = $self->{availablehosts};
+		%hosts = %$tmpscalar;
+	} else {	
+		%hosts = $self->perlcassa::Client::get_cassandra_nodes();
+	}
 
 	# build up a nonrandomized server list from the current hash
 	my @tmplist;
@@ -115,6 +187,7 @@ sub check_host($) {
 
 	eval {
 		$transport->open();
+		$transport->close();
 	};
 
 	if ($@) {
@@ -286,12 +359,12 @@ sub _refresh_cf_info() {
 	}
 }
 
-#####################################################################################################
-# client_setup() checks to make sure the current open client for this object was created for
-# the correct keyspace and columnfamily. Because all insert(), get() requests etc can be overloaded
-# with 'keyspace' => 'myNewKeyspace' or 'columnfamily' => 'myNewColumnFamily' we need to make sure
-# the client was created for these cf and keyspaces or Thrift/Cassandra will throw an exception
-#####################################################################################################
+=item client_setup
+ checks to make sure the current open client for this object was created for
+ the correct keyspace and columnfamily. Because all insert(), get() requests etc can be overloaded
+ with 'keyspace' => 'myNewKeyspace' or 'columnfamily' => 'myNewColumnFamily' we need to make sure
+ the client was created for these cf and keyspaces or Thrift/Cassandra will throw an exception
+=cut
 sub client_setup() {
 	my ($self, %opts) = @_;
 

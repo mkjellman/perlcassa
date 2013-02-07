@@ -7,42 +7,42 @@ our @EXPORT = qw(make_cql3_decoder);
 
 use Math::BigInt;
 use Math::BigFloat;
-use Socket;
+use Socket qw(AF_INET);
+use Socket6 qw(inet_ntop AF_INET6);
 
 use Cassandra::Cassandra;
 use Cassandra::Constants;
 use Cassandra::Types;
 
-use Data::Dumper;
-
 # XXX this is yanked from perlcassa.pm. it should only be in one place
 # hash that contains pack templates for ValidationTypes
 our %simple_unpack = (
-	'AsciiType' => 'A*',
-	'BooleanType' => 'C',
-	'BytesType' => 'a*',
-	'DateType' => 'q>',
-	'FloatType' => 'f>',
-	'DoubleType' => 'd>',
-	'Int32Type' => 'l>',
-	'LongType' => 'q>',
-	'UTF8Type' => 'a*',
-	'UUIDType' => 'S',
-	'CounterColumnType' => 'q>'
+	'AsciiType' 		=> 'A*',
+	'BooleanType' 		=> 'C',
+	'BytesType' 		=> 'a*',
+	'DateType' 		=> 'q>',
+	'FloatType' 		=> 'f>',
+	'DoubleType' 		=> 'd>',
+	'Int32Type' 		=> 'l>',
+	'LongType' 		=> 'q>',
+	'UTF8Type' 		=> 'a*',
+	'UUIDType' 		=> 'S',
+	'CounterColumnType'	=> 'q>'
 );
 
 our %complicated_unpack = (
-	'IntegerType' => \&unpack_IntegerType,
-	'DecimalType' => \&unpack_DecimalType,
-    'InetAddressType' => \&unpack_ipaddress,
+	'IntegerType'		=> \&unpack_IntegerType,
+	'DecimalType'		=> \&unpack_DecimalType,
+	'InetAddressType'	=> \&unpack_ipaddress,
 );
 
 sub new {
-    my ($class, %opt) = @_;
-    bless my $self = {
-        metadata => undef,
-        debug => 0,
-    }, $class;
+	my ($class, %opt) = @_;
+
+	bless my $self = {
+	        metadata => undef,
+		debug => 0,
+	}, $class;
 }
 
 ##
@@ -189,9 +189,9 @@ sub unpack_ipaddress {
     my $ret;
     if ($len == 16) {
         # Unpack ipv6 address
-        $ret = Socket::inet_ntop(Socket::AF_INET6, $packed_value);
+        $ret = inet_ntoa($packed_value);
     } elsif ($len == 4) {
-        $ret = Socket::inet_ntop(Socket::AF_INET, $packed_value);
+        $ret = inet_ntop(Socket::AF_INET(), $packed_value);
     } else {
         die("[ERROR] Invalid inet type.");
     }
