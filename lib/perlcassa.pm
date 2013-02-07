@@ -15,7 +15,7 @@ v0.05
     my $obj = new perlcassa(
         'columnfamily' => 'myCF',
         'keyspace' => 'myKeyspace',
-        'hosts' => ['host1.cassandra.local',
+        'seed_nodes' => ['host1.cassandra.local',
                      'host2.cassandra.local',
                      'host3.cassandra.local'],
         #optional

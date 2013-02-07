@@ -22,7 +22,7 @@ perlcassa can be installed by doing the usual:
     my $obj = new perlcassa(
         'columnfamily' => 'myCF',
         'keyspace' => 'myKeyspace',
-        'hosts' => ['host1.cassandra.local',
+        'seednodes' => ['host1.cassandra.local',
                      'host2.cassandra.local',
                      'host3.cassandra.local'],
         #optional
