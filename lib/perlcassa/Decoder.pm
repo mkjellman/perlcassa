@@ -189,7 +189,7 @@ sub unpack_ipaddress {
     my $ret;
     if ($len == 16) {
         # Unpack ipv6 address
-        $ret = inet_ntoa($packed_value);
+        $ret = inet_ntop(AF_INET6, $packed_value);
     } elsif ($len == 4) {
         $ret = inet_ntop(Socket::AF_INET(), $packed_value);
     } else {
