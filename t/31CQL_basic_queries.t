@@ -22,6 +22,7 @@ require_ok( 'perlcassa' );
 my $dbh;
 
 $dbh = new perlcassa(
+    'do_not_discover_peers' => 1,
     'hosts' => [$test_host],
     'keyspace' => $test_keyspace,
 );
