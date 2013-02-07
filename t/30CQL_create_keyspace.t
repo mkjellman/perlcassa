@@ -2,7 +2,6 @@
 
 use strict;
 use warnings;
-use Log::Any::Adapter qw{ScreenColoredLevel min_level trace};
 use Test::More;
 
 use Data::Dumper;
