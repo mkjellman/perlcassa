@@ -2,6 +2,7 @@
 
 use strict;
 use warnings;
+use Log::Any::Adapter qw{ScreenColoredLevel min_level trace};
 use Test::More;
 
 use Data::Dumper;
@@ -22,6 +23,7 @@ require_ok( 'perlcassa' );
 my $dbh;
 
 $dbh = new perlcassa(
+    'do_not_discover_peers' => 1,
     'hosts' => [$test_host],
     'keyspace' => 'system',
 );
