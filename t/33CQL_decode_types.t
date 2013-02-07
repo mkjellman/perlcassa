@@ -22,6 +22,7 @@ plan tests => 34;
 require_ok( 'perlcassa' );
 
 my $dbh = new perlcassa(
+    'do_not_discover_peers' => 1,
     'hosts' => [$test_host],
     'keyspace' => $test_keyspace,
 );

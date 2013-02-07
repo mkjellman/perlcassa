@@ -194,11 +194,11 @@ sub new() {
 		die('you must provide at least one cassandra host');
 	}
 
-	if (defined($opt{hosts})) {
+	if (defined($opt{hosts}) && !defined($opt{do_not_discover_peers})) {
 		die('hosts has been depricated for seed_nodes. please create object with \'do_not_discover_peers\' if you want to still manually provide hosts');
 	}
 
-	if (!defined($opt{seed_nodes})) {
+	if (!defined($opt{hosts}) && !defined($opt{seed_nodes})) {
 		die('you must provide at least one seed_node or create the object with \'do_not_discover_peers\' and pass \'hosts\' in the object creation');
 	}
 
