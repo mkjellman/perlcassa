@@ -1,3 +1,7 @@
+=item1 perlcassa::Client
+Calls related to interfacing with Thrift, setting up the load balancer pool, etc
+=cut
+
 package perlcassa::Client;
 
 use strict;
@@ -16,10 +20,9 @@ use Cassandra::Cassandra;
 use Time::HiRes qw ( gettimeofday );
 use threads;
 
-#####################################################################################################
-# generate_host_hashes()
-# generate two hashes to track both working and failed cassandra resources
-#####################################################################################################
+=item generate_host_hashes
+generate two hashes to track both working and failed C* resources
+=cut
 sub generate_host_hashes() {
 	my $self = shift;
 
@@ -91,10 +94,9 @@ sub get_cassandra_nodes() {
 	return %cass_hosts;
 }
 
-#####################################################################################################
-# generate_server_list()
-# generate the round robbin load balancer pool with avaliable servers
-#####################################################################################################
+=item generate_server_list
+generate the round robbin load balancer with avaliable servers to serve requests
+=cut
 sub generate_server_list() {
 	my $self = shift;
 
@@ -143,12 +145,11 @@ sub generate_server_list() {
 	}
 }
 
-#####################################################################################################
-# failure_thread()
-# failure thread logic
-# runs in the background and tries every 30 seconds to see if the host is back up
-# if it is back up, adds the host back into the pool of avaliable hosts
-#####################################################################################################
+=item failure_thread
+failure thread logic which runs in the background and tries
+every 30 seconds to see if the host is back up
+if it is back up, adds the host back into the pool of avaliable hosts
+=cut
 sub failure_thread() {
 	my $self = shift;
 
@@ -171,12 +172,11 @@ sub failure_thread() {
 	threads->exit();
 }
 
-#####################################################################################################
-# check_host($)
-# @args = host to check Thrift status on
-# check to see if a cassandra node is up or not
-# returns undef if host is down or 1 if host is up
-#####################################################################################################
+=item check_host($)
+@args C* host to check if it is up
+check to see if a C* node is up or not
+@returns under if host is down or 1 if host is up
+=cut
 sub check_host($) {
 	my ($self, $host) = @_;
 
@@ -197,11 +197,10 @@ sub check_host($) {
 	}
 }
 
-#####################################################################################################
-# fail_host($)
-# @arts = host to fail
-# remove a failed host from the pool of avaliable cassandra hosts
-#####################################################################################################
+=item fail_host($)
+@args host to fail and remove from pool
+remove a failed host from the pool of avaliable C* hosts
+=cut
 sub fail_host($) {
 	my ($self, $failed_host) = @_;
 
@@ -221,11 +220,10 @@ sub fail_host($) {
 	warn("[WARNING] Failed $failed_host");
 }
 
-#####################################################################################################
-# recover_host($)
-# @args = host to add back into pool
-# add a previously failed host back into the avaliable pool
-#####################################################################################################
+=item recover_host($)
+@args host to add back into the pool
+add a previously failed host back into the avaliable pool to service requests
+=cut
 sub recover_host($) {
 	my ($self, $host) = @_;
 
@@ -238,10 +236,9 @@ sub recover_host($) {
 	warn("[WARNING] Recovered $host back into the pool");
 }
 
-#####################################################################################################
-# get_host()
-# get the next avaliable cassandra host
-#####################################################################################################
+=item get_host()
+returns the next avaliable C* host in the pool
+=cut
 sub get_host() {
 	my ($self) = @_;
 
@@ -256,9 +253,9 @@ sub get_host() {
 	return $host;
 }
 
-#####################################################################################################
-# close_conn() frees the Cassandra node in the resource pool and gracefully closes the thrift client
-#####################################################################################################
+=item close_conn
+gracefully cloes the thrift client/transport of a open thrift connection
+=cut
 sub close_conn() {
 	my $self = shift;
 
@@ -272,9 +269,9 @@ sub close_conn() {
 	
 }
 
-#####################################################################################################
-# setup() is called to create a new Thrift Client. You should not need to call this manually
-##################################################################################################### 
+=item setup
+returns a new Thrift client. This should never need to be called manually
+=cut
 sub setup() {
 	my ($self, $keyspace) = @_;
 
