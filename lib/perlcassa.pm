@@ -928,9 +928,12 @@ sub multiget_slice {
 	$self->client_setup('keyspace' => $keyspace, 'columnfamily' => $column_family);
 
 	my @keys = @{ $opts{keys} // [] };
-	my @keys_packed;
-	foreach(@keys) {
-        	push @keys_packed, $self->_pack_values({values => [$_]}, $column_family, 'key');
+	unless ($self->{donotpack} == 1) {
+		my @keys_packed;
+		foreach(@keys) {
+			push @keys_packed, $self->_pack_values({values => [$_]}, $column_family, 'key');
+		}
+		@keys = @keys_packed;
 	}
 
 	# pack the column names unless object created specifying we shouldn't pack the values
@@ -987,17 +990,7 @@ sub multiget_slice {
 
 	my $r = {};
 	while(my($k,$v) = each %{ $res // {} }) {
-		my %cols;
-		foreach(@{ $v // [] }) {
-			my $data = $_->{column} || $_->{counter_column};
-			$cols{$data->{name}} = $self->_unpack_value(
-				name => [$data->{name}],
-				packedstr => $data->{value},
-				columnfamily => $column_family,
-				mode => 'value_validation'
-			);
-		}
-		$r->{$k}  = \%cols;
+		$r->{$k} = $self->_deserialize_column_array($v, $opts{return_expired});
 	}
 
 	return $r;
@@ -1560,7 +1553,7 @@ sub _deserialize_column_array() {
 		# remove expired columns from returned results unless overridden by 'return_expired' in opts:
 		if (defined($result->{column}{timestamp}) && defined($result->{column}{ttl})) {
 			my $expiretime = $result->{column}{timestamp} + $result->{column}{ttl};
-            # XXX TODO may be a bug to compare timestamp with ttl. ttl in seconds, time stamp in milliseconds?
+	            # XXX TODO may be a bug to compare timestamp with ttl. ttl in seconds, time stamp in milliseconds?
 			if ($expiretime < time && $return_expired != 1) {
 				next;
 			}
