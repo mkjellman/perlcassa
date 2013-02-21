@@ -836,13 +836,14 @@ sub bulk_insert() {
 # _get_column() returns the literal column family from thrift. This data still needs to be deserailized
 #####################################################################################################
 sub _get_column() {
-	my ($self, $column_family, $column, $key, $consistencylevel) = @_;
+	my ($self, $column_family, $column, $super_column, $key, $consistencylevel) = @_;
 
 	my $client = $self->{client};
 
 	my $column_path = new Cassandra::ColumnPath();
 	$column_path->{column_family} = $column_family;
-	$column_path->{column} = $column;
+	$column_path->{column} = $column if (defined $column);
+	$column_path->{super_column} = $super_column if (defined $super_column);
 
 	my $res;
 	if (defined($self->{timeout})) {
@@ -882,7 +883,7 @@ sub get() {
 	my %keyhash = ('values' => [$key]);
 	my $packedkey = $self->_pack_values(\%keyhash, $column_family, 'key');
 
-	my $res = $self->_get_column($column_family, $column, $key, $consistencylevel);
+	my $res = $self->_get_column($column_family, $column, undef, $key, $consistencylevel);
 	my $data = $res->{column} || $res->{counter_column};
 
 	my $value = $self->_unpack_value(
@@ -895,6 +896,46 @@ sub get() {
 	return $value;
 }
 
+#####################################################################################################
+# get_super() allows you to pull out a key/column pair from cassandra. The client will deserialize the data
+# and will return a hash containing the key, column, name, and value
+#
+# $obj->get_super(
+#       'columnfamily'  => 'myCF', #optional if provided in object creation
+#       'keyspace'      => 'myKeyspace', #optional if provided in object creation
+#       'key'           => 'myKey',
+#       'columnname'    => 'myColumn'
+# );
+#####################################################################################################
+sub get_super() {
+	my ($self, %opts) = @_;
+
+	my $column_family = $opts{columnfamily} || $self->{columnfamily};
+	my $keyspace = $opts{keyspace} || $self->{keyspace};
+	my $key = $opts{key};
+	my $column = $opts{columnname};
+	my $consistencylevel = $opts{consistency_level} || $self->{read_consistency_level};
+
+	$self->client_setup('keyspace' => $keyspace, 'columnfamily' => $column_family);
+	my %keyhash = ('values' => [$key]);
+	my $packedkey = $self->_pack_values(\%keyhash, $column_family, 'key');
+
+	my $res = $self->_get_column($column_family, undef, $column, $key, $consistencylevel);
+	my $data = $res->{column} || $res->{counter_column} || $res->{super_column};
+
+	my $return={};
+	foreach my $entry (@{$data->columns}) {
+        	my $value = $self->_unpack_value(
+        		name => [$entry->{name}],
+			packedstr => $entry->{value},
+			columnfamily => $column_family,
+			mode => 'value_validation'
+			);
+		$return->{$entry->{name}} = $value;
+	}
+
+	return $return;
+}
 #####################################################################################################
 # multiget_slice allows you to pull out a keys/columns from cassandra. The client will deserialize the data
 # and will return a hash ref:
