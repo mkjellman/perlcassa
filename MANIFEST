@@ -1,0 +1,22 @@
+Changes
+examples/bulk_insert.pl
+examples/compositetype_get_example.pl
+examples/CounterType_example.pl
+examples/get_examples.pl
+examples/simple_insert.pl
+lib/Cassandra/Cassandra.pm
+lib/Cassandra/Constants.pm
+lib/Cassandra/Types.pm
+lib/perlcassa.pm
+lib/perlcassa/Client.pm
+lib/perlcassa/CQL3Result.pm
+lib/perlcassa/Decoder.pm
+LICENSE
+Makefile.PL
+MANIFEST			This list of files
+README.md
+t/40CQL_internal.t
+t/99live_tests/30CQL_create_keyspace.t
+t/99live_tests/31CQL_basic_queries.t
+t/99live_tests/33CQL_decode_types.t
+t/99live_tests/38CQL_drop_keyspace.t

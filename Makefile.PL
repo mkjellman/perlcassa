@@ -17,7 +17,9 @@
 use 5.008_008;
 use ExtUtils::MakeMaker;
 
-WriteMakefile(
+my $live_tests = 0;
+
+my %config = (
 	NAME		=> 'perlcassa',
 	VERSION_FROM	=> 'lib/perlcassa.pm',
 	LICENSE		=> 'apache',
@@ -26,5 +28,24 @@ WriteMakefile(
 		'Class::Accessor' => '0',
 		'Time::HiRes'	=> '0',
 		'Socket6'	=> '0'
-	}
+	},
+    dist        => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
+    clean       => { FILES => "Debian_CPANTS.txt Perlcassa-*.tar.gz" },
 );
+
+my @patterns = qw( t/*.t t/*/*.t );
+$config{test} = { TESTS => join ' ', map { glob } @patterns };
+
+print "=  => To run full tests requires a running local cassandra server <=  =\n" unless $live_tests;
+
+if ($live_tests) {
+    # TODO Allow selection of keyspace
+    # TODO Allow selection of test server?
+}
+else {
+    # Don't run the tests in the 99live_tests folder
+    $config{test}->{TESTS} =~ s| t\/99live_tests\/.*\.t||g;
+    print "Setting to skip live tests.\n";
+}
+
+WriteMakefile( %config );
