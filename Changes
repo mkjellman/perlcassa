@@ -28,4 +28,4 @@ Change History
 
 0.050	January 30, 2013
 	- Incompatible changes made to CQL3 results. Removed ttl and timestamp columns. Result columns now point directly to the values.
-    - Makefile now does not do live tests by default, they must now be enabled manually.
+    	- Makefile now does not do live tests by default, they must now be enabled manually.
