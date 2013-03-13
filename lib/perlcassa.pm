@@ -786,7 +786,7 @@ sub bulk_insert() {
 		if ($self->{donotpack} == 1) {
 			$packedbulk{$value} = @{$columns{$value}}[0];
 		} else {
-			my %valuehash = ('values' => [\@{$columns{$value}}]);
+			my %valuehash = ('values' => \@{$columns{$value}});
 			my $packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value', $value);
 
 			my %columnhash = ('values' => [$value]);
