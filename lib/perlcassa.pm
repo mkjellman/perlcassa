@@ -786,10 +786,10 @@ sub bulk_insert() {
 		if ($self->{donotpack} == 1) {
 			$packedbulk{$value} = @{$columns{$value}}[0];
 		} else {
-			my %valuehash = ('values' => [$value]);
+			my %valuehash = ('values' => [\@{$columns{$value}}]);
 			my $packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value', $value);
 
-			my %columnhash = ('values' => \@{$columns{$value}});
+			my %columnhash = ('values' => [$value]);
 			my $packedname = $self->_pack_values(\%columnhash, $columnfamily, 'column');
 		
 			$packedbulk{$packedname} = $packedvalue;
