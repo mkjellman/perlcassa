@@ -30,17 +30,19 @@ our %simple_packs = (
 );
 
 our %complicated_unpack = (
-	'IntegerType'		=> \&unpack_IntegerType,
-	'DecimalType'		=> \&unpack_DecimalType,
-	'InetAddressType'	=> \&unpack_ipaddress,
-	'UUIDType'			=> \&unpack_uuid,
-	'TimeUUIDType'		=> \&unpack_uuid
+	'org.apache.cassandra.db.marshal.IntegerType'		=> \&unpack_IntegerType,
+	'org.apache.cassandra.db.marshal.DecimalType'		=> \&unpack_DecimalType,
+	'org.apache.cassandra.db.marshal.InetAddressType'	=> \&unpack_ipaddress,
+	'org.apache.cassandra.db.marshal.UUIDType'			=> \&unpack_uuid,
+	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&unpack_uuid
 );
 
 our %complicated_pack = (
 	'org.apache.cassandra.db.marshal.IntegerType'		=> \&pack_IntegerType,
 	'org.apache.cassandra.db.marshal.DecimalType'		=> \&pack_DecimalType,
 	'org.apache.cassandra.db.marshal.InetAddressType'	=> \&pack_ipaddress,
+	'org.apache.cassandra.db.marshal.UUIDType'			=> \&pack_uuid,
+	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&pack_uuid
 );
 
 sub new {
@@ -238,6 +240,14 @@ sub unpack_uuid {
         die("[ERROR] Invalid uuid type.");
     }
     return join("-", @values);
+}
+
+# Takes a string uuid and returns the packed version for CQL3
+sub pack_uuid {
+    my $value = shift;
+    my @values = split(/-/, $value);
+    my $encoded = pack("H8 H4 H4 H4 H12", @values);
+    return $encoded;
 }
 
 # Unpack a collection type. List, Map, or Set
