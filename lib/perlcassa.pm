@@ -470,6 +470,37 @@ sub prepare_inline_cql3 {
     return $pq;
 }
 
+sub prepare_prepared_cql3 {
+    my $query = shift;
+
+    my $position_map = [];
+
+    # Split on string literals. No nesting
+    my @split_query = split(/('[^']*'|"[^"]*")/, " ".$query." ");
+
+    # TODO split on comments as well
+    my @prepared;
+    for my $part (@split_query) {
+        if (defined($part)) {
+            # Check if it is string literal
+            if ($part =~ /^('|")/) {
+                push(@prepared, $part);
+            } else {
+                # Replace each parameter with quoted and escaped version
+                # Note this could probably be made faster if needed
+                # maybe rewritten for readability too...
+                while ($part =~ s/(\W):(\w+)(?=\W)/$1."?"/e) {
+                    push(@$position_map, $2);
+                }
+                push(@prepared, $part);
+            }
+        }
+    }
+    my $pq = join('', @prepared);
+    $pq =~ s/^\ |\ $//g; # remove the whitespace added at beginning
+    return ($pq, $position_map);
+}
+
 # CQL3 requires quotes to be escaped by doubling them.
 sub _escape_quotes() {
     my $str = shift;
