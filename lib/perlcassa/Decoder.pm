@@ -205,13 +205,13 @@ sub unpack_uuid {
     my $packed_value = shift;
     my $data_type = shift;
     my $len = length($packed_value);
-    my $ret;
+    my @values;
     if ($len ==16) {
-		$ret = unpack('H8', $packed_value).'-'.unpack('x4H4', $packed_value).'-'.unpack('x6H4', $packed_value).'-'.unpack('x8H4', $packed_value).'-'.unpack('x10H12', $packed_value);
-	} else {
+        @values = unpack("H8 H4 H4 H12", $packed_value);
+    } else {
         die("[ERROR] Invalid uuid type.");
     }
-    return $ret;
+    return join("-", @values);
 }
 
 # Unpack a collection type. List, Map, or Set
