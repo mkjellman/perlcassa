@@ -158,6 +158,7 @@ our $VERSION = '0.050';
 
 use perlcassa::Client qw/setup close_conn client_setup/;
 use perlcassa::CQL3Result;
+use perlcassa::Decoder qw(pack_val);
 
 use Cassandra::Cassandra;
 use Cassandra::Constants;
@@ -317,6 +318,67 @@ sub column_family() {
 	}
 }
 
+sub pexec() {
+	my ($self, $query, $params) = @_;
+    my $compression = Cassandra::Compression::NONE;
+
+	# Bind parameters
+	my ($prepared_query, $position_map) = prepare_prepared_cql3($query);
+
+	my $keyspace = $self->{keyspace};
+	$self->client_setup('keyspace' => $keyspace);
+	my $client = $self->{client};
+
+    if ($self->{debug}) {
+        print STDERR ""
+                ."Query         : $query\n"
+                ."Prepared      : $prepared_query\n"
+                ;
+    }   
+
+    my $cql3_prepared = $client->prepare_cql3_query($prepared_query, $compression);
+
+    my $itemid = $cql3_prepared->{itemId};
+    my $types = $cql3_prepared->{variable_types};
+    my $max = $cql3_prepared->{count} - 1;
+
+    my $values = [];
+    for my $i (0..$max) {
+        # Get the param name and value from the position map
+        my $param_name = $position_map->[$i];
+        my $value = $params->{$param_name};
+        # Get the type, pack the value, and shove it into the array
+        my $type = $types->[$i];
+        my $encoded = pack_val($value, $type);
+        $values->[$i] = $encoded;
+    }
+
+	my $query_result;
+	if (defined($self->{timeout})) {
+		local $SIG{ALRM} = sub { die "CQL Query Timed Out"; };
+		my $alarm = alarm($self->{timeout});
+		$query_result = $client->execute_prepared_cql3_query(
+            $itemid,
+			$values,
+			Cassandra::Compression::NONE,
+			Cassandra::ConsistencyLevel::ONE
+		);
+		alarm($alarm);
+	} else {
+		$query_result = $client->execute_prepared_cql3_query(
+            $itemid,
+			$values,
+			Cassandra::Compression::NONE,
+			Cassandra::ConsistencyLevel::ONE
+		);
+	}
+
+	my $resp = perlcassa::CQL3Result->new();
+	$resp->process_cql3_results($query_result);
+
+	return $resp;
+}
+
 ##
 # the CQL3 exec call
 # 
@@ -342,6 +404,13 @@ sub exec() {
 	$self->client_setup('keyspace' => $keyspace);
 
 	my $client = $self->{client};
+
+    if ($self->{debug}) {
+        print STDERR ""
+                ."Query         : $query\n"
+                ."Prepared      : $prepared_query\n"
+                ;
+    }   
 
 	my $query_result;
 	if (defined($self->{timeout})) {

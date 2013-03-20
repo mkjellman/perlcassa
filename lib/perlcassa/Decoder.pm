@@ -3,7 +3,7 @@ package perlcassa::Decoder;
 use strict;
 use warnings;
 use base 'Exporter';
-our @EXPORT = qw(make_cql3_decoder);
+our @EXPORT = qw(make_cql3_decoder pack_val);
 
 use Math::BigInt;
 use Math::BigFloat;
@@ -16,17 +16,17 @@ use Cassandra::Types;
 
 # XXX this is yanked from perlcassa.pm. it should only be in one place
 # hash that contains pack templates for ValidationTypes
-our %simple_unpack = (
-	'AsciiType' 		=> 'A*',
-	'BooleanType' 		=> 'C',
-	'BytesType' 		=> 'a*',
-	'DateType' 		=> 'q>',
-	'FloatType' 		=> 'f>',
-	'DoubleType' 		=> 'd>',
-	'Int32Type' 		=> 'l>',
-	'LongType' 		=> 'q>',
-	'UTF8Type' 		=> 'a*',
-	'CounterColumnType'	=> 'q>'
+our %simple_packs = (
+	'org.apache.cassandra.db.marshal.AsciiType' 		=> 'A*',
+	'org.apache.cassandra.db.marshal.BooleanType' 		=> 'C',
+	'org.apache.cassandra.db.marshal.BytesType' 		=> 'a*',
+	'org.apache.cassandra.db.marshal.DateType' 		=> 'q>',
+	'org.apache.cassandra.db.marshal.FloatType' 		=> 'f>',
+	'org.apache.cassandra.db.marshal.DoubleType' 		=> 'd>',
+	'org.apache.cassandra.db.marshal.Int32Type' 		=> 'l>',
+	'org.apache.cassandra.db.marshal.LongType' 		=> 'q>',
+	'org.apache.cassandra.db.marshal.UTF8Type' 		=> 'a*',
+	'org.apache.cassandra.db.marshal.CounterColumnType'	=> 'q>'
 );
 
 our %complicated_unpack = (
@@ -35,6 +35,12 @@ our %complicated_unpack = (
 	'InetAddressType'	=> \&unpack_ipaddress,
 	'UUIDType'			=> \&unpack_uuid,
 	'TimeUUIDType'		=> \&unpack_uuid
+);
+
+our %complicated_pack = (
+	'org.apache.cassandra.db.marshal.IntegerType'		=> \&pack_IntegerType,
+	'org.apache.cassandra.db.marshal.DecimalType'		=> \&pack_DecimalType,
+	'org.apache.cassandra.db.marshal.InetAddressType'	=> \&pack_ipaddress,
 );
 
 sub new {
@@ -98,7 +104,6 @@ sub decode_column {
     my $data_type = $self->{metadata}->{default_value_type};
     if (defined($column_name)) {
         $data_type = $self->{metadata}->{value_types}->{$column_name};
-        $data_type =~ s/org\.apache\.cassandra\.db\.marshal\.//g;
     }
     my $value = undef;
     if (defined($column->{value})) {
@@ -128,8 +133,8 @@ sub unpack_val {
     my $data_type = shift;
 
     my $unpacked;
-    if (defined($simple_unpack{$data_type})) {
-        $unpacked = unpack($simple_unpack{$data_type}, $packed_value);
+    if (defined($simple_packs{$data_type})) {
+        $unpacked = unpack($simple_packs{$data_type}, $packed_value);
     } elsif ($data_type =~ /^(List|Map|Set)Type/) {
         # Need to unpack a collection of values
         $unpacked = unpack_collection($packed_value, $data_type);
@@ -141,6 +146,27 @@ sub unpack_val {
             die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
     }
     return $unpacked;
+}
+
+sub pack_val {
+    my $value = shift;
+    my $data_type = shift;
+
+    my $packed;
+    if (defined($simple_packs{$data_type})) {
+        $packed = pack($simple_packs{$data_type}, $value);
+    } elsif ($data_type =~ /(List|Map|Set)Type/) {
+        # Need to pack the collection
+        $packed = pack_collection($value, $data_type);
+    } elsif (defined($complicated_unpack{$data_type})) {
+        # It is a complicated type
+        my $pack_sub = $complicated_pack{$data_type};
+        $packed = $pack_sub->($value);
+    } else {
+        die("[ERROR] Attempted to pack an unknown data type. ($data_type)");
+    }
+
+    return $packed;
 }
 
 # Convert a hex string to a signed bigint
@@ -232,7 +258,7 @@ sub unpack_collection {
     # items/pairs in the collection. Then it goes backward 2 bytes (16 bits)
     # and grabs 16-bit value again, but uses it to know how many items/pairs
     # to decode
-    if ($base_type =~ /^(List|Set)Type/) {
+    if ($base_type =~ /org\.apache\.cassandra\.db\.marshal\.(List|Set)Type/) {
         # Handle the list and set. They are bascally the same
         # Each item is unpacked as raw bytes, then unpacked by our normal
         # routine
@@ -243,7 +269,7 @@ sub unpack_collection {
             push(@{$unpacked}, $v);
         }
 
-    } elsif ($base_type =~ /^MapType/) {
+    } elsif ($base_type eq "org.apache.cassandra.db.marshal.MapType") {
         # Handle the map types
         # Each pair is unpacked as two groups of raw bytes, then unpacked by
         # our normal routines
@@ -260,6 +286,52 @@ sub unpack_collection {
         die("[BUG] You broke it. File a bug... What is '$data_type'?");
     }
     return $unpacked;
+}
+
+
+# Pack a collection type. List, Map, or Set
+# Expectations...
+#   For List and Set types the first arugment is expected to be an array.
+#
+#   For Map types... ? not implemented XXX
+#
+# Returns the packed stuff #XXX better comment
+sub pack_collection {
+    my $values = shift;
+    my $data_type = shift;
+    my $packed;
+    my ($base_type, $inner_type) = ($data_type =~ /^([^)]*)\(([^)]*)\)/);
+
+    # "n/( ... )"
+    # Note: the preceeding is the basic template for collections.
+    # The template code puts a 16-bit unsigned value, which is the number of
+    # items/pairs in the collection.
+    if ($base_type =~ /org\.apache\.cassandra\.db\.marshal\.(List|Set)Type/) {
+        # Handle the list and set. They are bascally the same.
+        # Pack each value as inner type
+        my @packed_values = map { pack_val($_, $inner_type) } @$values;
+        # Pack them all together. First count of elements, then each element
+        # is preceded by its length in bytes
+        my $encoded = pack("n/(n/a)", @packed_values);
+        $packed = $encoded;
+    } elsif ($base_type eq "org.apache.cassandra.db.marshal.MapType") {
+        die("[BUG] XXX Unable to pack map types.\n");
+        ## Handle the map types
+        ## Each pair is unpacked as two groups of raw bytes, then unpacked by
+        ## our normal routines
+        #my ($count, @values) = unpack("nX2n/(n/a n/a)", $values);
+        #my @inner_types = split(",", $inner_type);
+        #$unpacked = {};
+        #for (my $i = 0; $i < $count; $i++) {
+        #    my $k = unpack_val($values[($i*2+0)], $inner_types[0]);
+        #    my $v = unpack_val($values[($i*2+1)], $inner_types[1]);
+        #    $unpacked->{$k} = $v;
+        #}
+
+    } else {
+        die("[BUG] You broke it. File a bug... What is '$data_type'?");
+    }
+    return $packed;
 }
 
 1;
