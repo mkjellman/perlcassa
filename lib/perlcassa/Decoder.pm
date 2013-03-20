@@ -26,7 +26,6 @@ our %simple_unpack = (
 	'Int32Type' 		=> 'l>',
 	'LongType' 		=> 'q>',
 	'UTF8Type' 		=> 'a*',
-	'UUIDType' 		=> 'S',
 	'CounterColumnType'	=> 'q>'
 );
 
@@ -34,6 +33,8 @@ our %complicated_unpack = (
 	'IntegerType'		=> \&unpack_IntegerType,
 	'DecimalType'		=> \&unpack_DecimalType,
 	'InetAddressType'	=> \&unpack_ipaddress,
+	'UUIDType'			=> \&unpack_uuid,
+	'TimeUUIDType'		=> \&unpack_uuid
 );
 
 sub new {
@@ -196,6 +197,21 @@ sub unpack_ipaddress {
         die("[ERROR] Invalid inet type.");
     }
     return $ret;
+}
+
+# Unpack uuid/uuidtime type
+# Returns a string
+sub unpack_uuid {
+    my $packed_value = shift;
+    my $data_type = shift;
+    my $len = length($packed_value);
+    my @values;
+    if ($len ==16) {
+        @values = unpack("H8 H4 H4 H12", $packed_value);
+    } else {
+        die("[ERROR] Invalid uuid type.");
+    }
+    return join("-", @values);
 }
 
 # Unpack a collection type. List, Map, or Set
