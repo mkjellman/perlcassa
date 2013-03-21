@@ -158,6 +158,7 @@ our $VERSION = '0.050';
 
 use perlcassa::Client qw/setup close_conn client_setup/;
 use perlcassa::CQL3Result;
+use perlcassa::Decoder qw(pack_val);
 
 use Cassandra::Cassandra;
 use Cassandra::Constants;
@@ -334,28 +335,54 @@ sub column_family() {
 ##
 sub exec() {
 	my ($self, $query, $params) = @_;
+    my $compression = Cassandra::Compression::NONE;
 
 	# Bind parameters
-	my $prepared_query = prepare_inline_cql3($query, $params);
+	my ($prepared_query, $position_map) = prepare_prepared_cql3($query);
 
 	my $keyspace = $self->{keyspace};
 	$self->client_setup('keyspace' => $keyspace);
-
 	my $client = $self->{client};
+
+    if ($self->{debug}) {
+        print STDERR ""
+                ."Query         : $query\n"
+                ."Prepared      : $prepared_query\n"
+                ;
+    }   
+
+    my $cql3_prepared = $client->prepare_cql3_query($prepared_query, $compression);
+
+    my $itemid = $cql3_prepared->{itemId};
+    my $types = $cql3_prepared->{variable_types};
+    my $max = $cql3_prepared->{count} - 1;
+
+    my $values = [];
+    for my $i (0..$max) {
+        # Get the param name and value from the position map
+        my $param_name = $position_map->[$i];
+        my $value = $params->{$param_name};
+        # Get the type, pack the value, and shove it into the array
+        my $type = $types->[$i];
+        my $encoded = pack_val($value, $type);
+        $values->[$i] = $encoded;
+    }
 
 	my $query_result;
 	if (defined($self->{timeout})) {
 		local $SIG{ALRM} = sub { die "CQL Query Timed Out"; };
 		my $alarm = alarm($self->{timeout});
-		$query_result = $client->execute_cql3_query(
-			$prepared_query,
+		$query_result = $client->execute_prepared_cql3_query(
+            $itemid,
+			$values,
 			Cassandra::Compression::NONE,
 			Cassandra::ConsistencyLevel::ONE
 		);
 		alarm($alarm);
 	} else {
-		$query_result = $client->execute_cql3_query(
-			$prepared_query,
+		$query_result = $client->execute_prepared_cql3_query(
+            $itemid,
+			$values,
 			Cassandra::Compression::NONE,
 			Cassandra::ConsistencyLevel::ONE
 		);
@@ -367,15 +394,10 @@ sub exec() {
 	return $resp;
 }
 
-##
-# Replace each :param_name with the quoted value of $params{param_name}
-# Note comments do not work, but string literals should.
-##
-sub prepare_inline_cql3 {
+sub prepare_prepared_cql3 {
     my $query = shift;
-    my $params = shift || {};
-    my $attr = shift || {};
-    my %h_params = %$params;
+
+    my $position_map = [];
 
     # Split on string literals. No nesting
     my @split_query = split(/('[^']*'|"[^"]*")/, " ".$query." ");
@@ -391,23 +413,17 @@ sub prepare_inline_cql3 {
                 # Replace each parameter with quoted and escaped version
                 # Note this could probably be made faster if needed
                 # maybe rewritten for readability too...
-                while ($part =~ s/(\W):(\w+)(?=\W)/$1."'"._escape_quotes($h_params{$2})."'"/e) {}
+                while ($part =~ s/(\W):(\w+)(?=\W)/$1."?"/e) {
+                    push(@$position_map, $2);
+                }
                 push(@prepared, $part);
             }
         }
     }
     my $pq = join('', @prepared);
     $pq =~ s/^\ |\ $//g; # remove the whitespace added at beginning
-    return $pq;
+    return ($pq, $position_map);
 }
-
-# CQL3 requires quotes to be escaped by doubling them.
-sub _escape_quotes() {
-    my $str = shift;
-    $str =~ s/'/''/g;
-    return $str;
-}
-
 
 #####################################################################################################
 # execute() allows you to run CQL queries against Apache Cassandra

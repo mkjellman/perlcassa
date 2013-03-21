@@ -5,6 +5,7 @@ use warnings;
 use Test::More;
 use Math::BigInt;
 use Math::BigFloat;
+use UUID::Tiny;
 
 use Data::Dumper;
 
@@ -17,7 +18,7 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 34;
+plan tests => 42;
 
 require_ok( 'perlcassa' );
 
@@ -81,7 +82,7 @@ my $row_fp1 = $res->fetchone();
 is($row_fp1->{t_double}, 1234.5, "Check double value.");
 is($row_fp1->{t_float}, 9.875, "Check float value.");
 is($row_fp1->{t_decimal}, $float1_s,
-    "Check decimal (arbitrary precision float) value.");
+    "Check decimal large (arbitrary precision float) value.");
 
 # Check negative floating point types
 my $float2_s = '-0.00000000000000000000000000167262177';
@@ -93,8 +94,31 @@ my $row_fp2 = $res->fetchone();
 is($row_fp2->{t_double}, -0.000012345, "Check negative double value.");
 is($row_fp2->{t_float}, -0.5, "Check negative float value.");
 is($row_fp2->{t_decimal}, $float2_s,
-    "Check negative decimal (arbitrary precision float) value.");
+    "Check negative decimal small (arbitrary precision float) value.");
 
+# Check floating point types
+my $float3_s = '-62831853071.7958647692528676655900576839433879875021';
+my $float3 = Math::BigFloat->new($float3_s);
+my $param_fp3 = { dv => 1234.5, fv => 9.875, av => $float3, };
+$res = $dbh->exec("INSERT INTO all_types (pk, t_float, t_double, t_decimal) VALUES ('float_test3', :fv, :dv, :av)", $param_fp3);
+$res = $dbh->exec("SELECT pk, t_float, t_double, t_decimal FROM all_types WHERE pk = 'float_test3'");
+my $row_fp3 = $res->fetchone();
+is($row_fp3->{t_double}, 1234.5, "Check double value.");
+is($row_fp3->{t_float}, 9.875, "Check float value.");
+is($row_fp3->{t_decimal}, $float3_s,
+    "Check negative decimal large (arbitrary precision float) value.");
+
+# Check small floating point types
+my $float4_s = '0.00000000000000000000000001980221471';
+my $float4 = Math::BigFloat->new($float4_s);
+my $param_fp4 = { dv => -0.000012345, fv => -0.5, av => $float4 };
+$res = $dbh->exec("INSERT INTO all_types (pk, t_float, t_double, t_decimal) VALUES ('float_test4', :fv, :dv, :av)", $param_fp4);
+$res = $dbh->exec("SELECT pk, t_float, t_double, t_decimal FROM all_types WHERE pk = 'float_test4'");
+my $row_fp4 = $res->fetchone();
+is($row_fp4->{t_double}, -0.000012345, "Check negative double value.");
+is($row_fp4->{t_float}, -0.5, "Check negative float value.");
+is($row_fp4->{t_decimal}, $float4_s,
+    "Check decimal small (arbitrary precision float) value.");
 
 # Check integer types
 my $varint_v = Math::BigInt->new("1000000000000000000001");
@@ -190,6 +214,15 @@ $res = $dbh->exec("SELECT pk, t_ascii, WRITETIME(t_ascii), TTL(t_ascii) FROM all
 $row_ttl = $res->fetchone();
 is($row_ttl, undef, "Check TTL expiration.");
 
+# Test UUID types
+my $uuid_params01 = { tuuid => create_UUID_as_string(UUID_V1), uuid => create_UUID_as_string(UUID_V4) };
+$res = $dbh->exec("INSERT INTO all_types (pk, t_timeuuid, t_uuid) VALUES ( 'uuid_test', :tuuid, :uuid)",
+    $uuid_params01
+);
+$res = $dbh->exec("SELECT pk, t_timeuuid, t_uuid FROM all_types WHERE pk = 'uuid_test'");
+my $row01_uuid01 = $res->fetchone();
+is($row01_uuid01->{t_timeuuid}, $uuid_params01->{tuuid}, "Check Time UUID insert and retrieval.");
+is($row01_uuid01->{t_uuid}, $uuid_params01->{uuid}, "Check UUID insert and retrieval.");
 
 
 # Clean up our tables
@@ -199,12 +232,12 @@ $res = $dbh->exec("DROP TABLE collection_types");
 ok($res, "Drop test table collection_types.");
 
 
+$dbh->finish();
+
 
 # Still need to implement/fix and test
 #  blob
 #  timestamp
-#  timeuuid
-#  uuid
 #  counters
 
 # Partial Support. UTF8 does not work correctly
@@ -224,6 +257,7 @@ ok($res, "Drop test table collection_types.");
 #  map
 #  set
 #  list
+#  timeuuid
+#  uuid
 
-$dbh->finish();    
 

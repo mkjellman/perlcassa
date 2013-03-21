@@ -59,15 +59,11 @@ sub get_cassandra_nodes() {
 	}
 
 	# execute the CQL3 query to get all of the avaliable peers from the system table
-	my $query = "SELECT * FROM system.peers";
-	my $params = ();
-	my $prepared_query = perlcassa::prepare_inline_cql3($query, $params);
-
 	my $qres;
 	local $SIG{ALRM} = sub { die "Getting seed nodes timed out"; };
 	my $alarm = alarm(10);
 	$qres = $client->execute_cql3_query(
-		$prepared_query,
+		"SELECT * FROM system.peers",
 		Cassandra::Compression::NONE,
 		Cassandra::ConsistencyLevel::ONE
 	);
