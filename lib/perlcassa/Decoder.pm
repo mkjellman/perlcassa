@@ -302,7 +302,7 @@ sub unpack_uuid {
     my $len = length($packed_value);
     my @values;
     if ($len ==16) {
-        @values = unpack("H8 H4 H4 H12", $packed_value);
+        @values = unpack("H8 H4 H4 H4 H12", $packed_value);
     } else {
         die("[ERROR] Invalid uuid type.");
     }
