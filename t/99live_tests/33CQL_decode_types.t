@@ -18,7 +18,7 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 34;
+plan tests => 42;
 
 require_ok( 'perlcassa' );
 

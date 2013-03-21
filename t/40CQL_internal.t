@@ -8,7 +8,7 @@ use Data::Dumper;
 
 $|++;
 
-plan tests => 13;
+plan tests => 27;
 
 use perlcassa;# qw{prepare_prepared_cql3};
 
@@ -120,15 +120,15 @@ is(perlcassa::Decoder::unpack_val(
 my $packed06 = perlcassa::Decoder::pack_val( Math::BigInt->new($int06), "org.apache.cassandra.db.marshal.IntegerType");
 is(unpack("H*", $packed06), $hex06, "Pack Decimal Type ok, positive high bit set even length");
 
+my $hex07 = "0000000010095dd9267e5007d565f1386b768370000000000000";
+my $dec07 = "6000000000000000000000000000000000000000000000000000";
+is(perlcassa::Decoder::unpack_val(
+        pack("H*", $hex07), "org.apache.cassandra.db.marshal.DecimalType"),
+    $dec07,
+    "Unpack Decimal Type ok, positive large magnitude"
+);
 TODO: {
     local $TODO = "Numbers with positive exponents do not get packed correctly.";
-    my $hex07 = "0000000010095dd9267e5007d565f1386b768370000000000000";
-    my $dec07 = "6000000000000000000000000000000000000000000000000000";
-    is(perlcassa::Decoder::unpack_val(
-            pack("H*", $hex07), "org.apache.cassandra.db.marshal.DecimalType"),
-        $dec07,
-        "Unpack Decimal Type ok, positive large magnitude"
-    );
     my $packed07 = perlcassa::Decoder::pack_val( $dec07, "org.apache.cassandra.db.marshal.DecimalType");
     is(unpack("H*", $packed07), $hex07, "Pack Decimal Type ok, positive large magnitude");
 }
