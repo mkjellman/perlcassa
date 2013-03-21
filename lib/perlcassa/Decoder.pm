@@ -137,7 +137,7 @@ sub unpack_val {
     my $unpacked;
     if (defined($simple_packs{$data_type})) {
         $unpacked = unpack($simple_packs{$data_type}, $packed_value);
-    } elsif ($data_type =~ /^(List|Map|Set)Type/) {
+    } elsif ($data_type =~ /^org\.apache\.cassandra\.db\.marshal\.(Map|List|Set)Type/) {
         # Need to unpack a collection of values
         $unpacked = unpack_collection($packed_value, $data_type);
     } elsif (defined($complicated_unpack{$data_type})) {
@@ -187,6 +187,35 @@ sub hex_to_bigint {
     return $ret;
 }
 
+# Convert a signed bigint to a packed value
+sub bigint_to_pack {
+    my $value = shift;
+    my $hex;
+    my $align;
+    if ($value->sign() eq '-') {
+        $hex = $value->binc()->as_hex();
+        $hex =~ s/^-0x//;
+        # Need to flip the bits, bnot does something funky
+        $hex =~ tr/0123456789abcdef/fedcba9876543210/;
+        $align = "f";
+    } else {
+        $hex = $value->as_hex();
+        $hex =~ s/^0x//;
+        if ($hex =~ /^[89abcdef]/) { 
+            # if the highest bit is set, and this is not supposed to be
+            # negative then we need some padding.
+            $hex = "0".$hex;
+        }
+        $align = "0";
+    }
+    if (length($hex)%2 == 1) {
+        # Things need to be aligned to even length
+        $hex = $align . $hex;
+    }
+    my $encoded = pack("H*", $hex);
+    return $encoded;
+}
+
 # Unpack arbitrary precision int
 # Returns a Math::BigInt
 sub unpack_IntegerType {
@@ -195,6 +224,20 @@ sub unpack_IntegerType {
     my $ret = hex_to_bigint(unpack("B1XH*", $packed_value));
     my $unpacked_int = $ret->bstr();
     return $unpacked_int;
+}
+
+# XXX
+sub pack_IntegerType {
+    my $value = shift;
+
+    # if it is not a ref, assume it is a string
+    # if its a ref, assume its a Math::BigInt
+    unless (ref($value)) {
+        $value = Math::BigInt->new($value);
+    }
+
+    my $encoded = bigint_to_pack($value);
+    return $encoded;
 }
 
 # Unpack arbitrary precision decimal
@@ -207,6 +250,30 @@ sub unpack_DecimalType {
     my $ret = Math::BigFloat->new($mantissa."E-".$exp);
     my $unpacked_dec = $ret->bstr();
     return $unpacked_dec;
+}
+
+# Unpack arbitrary precision deciaml
+# Expects the first argument to be a string or a Math::BigFloat
+# Returns a packed value
+sub pack_DecimalType {
+    my $value = shift;
+
+    # TODO Check for passed in bigfloat
+    unless (ref($value)) {
+        $value = Math::BigFloat->new($value);
+    }
+
+    my ($mantissa, $exponent) = $value->parts();
+    
+    ### XXX
+    # Numbers with positive exponents do not get packed correctly
+    my $exp = $exponent->babs();
+    ### XXX
+
+    my $encoded = pack("N a*", $exp, bigint_to_pack($mantissa));
+
+    # print "unpack encoded: ".unpack("H*", $encoded)."\n";
+    return $encoded;
 }
 
 # Unpack inet type
