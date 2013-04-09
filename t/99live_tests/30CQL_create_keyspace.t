@@ -37,7 +37,7 @@ TODO: {
     ok($res, "Drop testing keyspace ($test_keyspace).");
 }
 
-$res = $dbh->exec("CREATE KEYSPACE $test_keyspace WITH REPLICATION = {'CLASS' : 'SimpleStrategy', 'replication_factor': 1};");
+$res = $dbh->exec("CREATE KEYSPACE $test_keyspace WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1};");
 ok($res, "Create test keyspace ($test_keyspace).");
 
 $res = $dbh->exec(" CREATE TABLE $test_keyspace.user_profiles ( user_id text PRIMARY KEY, first_name text, last_name text, year_of_birth int) WITH COMPACT STORAGE");

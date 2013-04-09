@@ -33,7 +33,7 @@ my %config = (
     clean       => { FILES => "Debian_CPANTS.txt Perlcassa-*.tar.gz" },
 );
 
-my @patterns = qw( t/*.t t/*/*.t );
+my @patterns = qw( t/*.t );
 $config{test} = { TESTS => join ' ', map { glob } @patterns };
 
 print "=  => To run full tests requires a running local cassandra server <=  =\n" unless $live_tests;
@@ -41,10 +41,12 @@ print "=  => To run full tests requires a running local cassandra server <=  =\n
 if ($live_tests) {
     # TODO Allow selection of keyspace
     # TODO Allow selection of test server?
+    # Adds the tests from the 99live* folders
+    my @livepatterns = qw( t/99live*/*.t );
+    my $testfiles = join ' ', map { glob } @livepatterns ;
+    $config{test}->{TESTS} .= " ".$testfiles;
 }
 else {
-    # Don't run the tests in the 99live_tests folder
-    $config{test}->{TESTS} =~ s| t\/99live_tests\/.*\.t||g;
     print "Setting to skip live tests.\n";
 }
 
