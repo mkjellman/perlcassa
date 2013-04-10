@@ -8,7 +8,8 @@ use perlcassa;
 my $obj = new perlcassa(
 	keyspace	=> 'test',
 	hosts		=> ['127.0.0.1'],
-	columnfamily	=> 'comp_utf8'
+	columnfamily	=> 'comp_utf8',
+	do_not_discover_peers => 1
 );
 
 my %bulk = (
