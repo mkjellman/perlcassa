@@ -14,7 +14,8 @@ use perlcassa;
 my $obj = new perlcassa(
 	keyspace	=> 'test',
 	columnfamily	=> 'testsimple_cf',
-	hosts		=> ['127.0.0.1'] # this should be an array of your cassandra nodes
+	hosts		=> ['127.0.0.1'],
+	do_not_discover_peers in example => 1
 );
 
 $obj->column_family(
