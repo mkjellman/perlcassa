@@ -23,6 +23,7 @@ use perlcassa;
 my $obj = new perlcassa(
 	keyspace	=> 'test',
 	hosts		=> ['127.0.0.1'],
+	do_not_discover_peers => 1
 	#validators	=> \%validators   # if you are going to manually provide the validation classes from above
 );
 
