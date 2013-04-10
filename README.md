@@ -124,6 +124,7 @@ This wouldn't have been possible without help from friend and colleague BJ Black
 
 Michael Kjellman, mkjellman@barracuda.com
 Colin Blower, cblower@barracuda.com
+Marcio Ferreira, marciodesouzaferreira@gmail.com
 
 # COPYRIGHT & LICENSE
 
