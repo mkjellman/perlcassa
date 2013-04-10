@@ -8,7 +8,8 @@ use perlcassa;
 my $obj = new perlcassa(
 	columnfamily	=> 'counterCF',
 	keyspace	=> 'test',
-	hosts		=> ['127.0.0.1']
+	hosts		=> ['127.0.0.1'],
+        do_not_discover_peers => 1
 );
 
 # you can use add() to both add or subtract from a CounterType
