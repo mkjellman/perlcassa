@@ -8,7 +8,8 @@ use perlcassa;
 # create our column family with a CompositeType comparator type
 my $obj = new perlcassa(
 	keyspace	=> 'test',
-	hosts		=> ['127.0.0.1']
+	hosts		=> ['127.0.0.1'],
+	do_not_discover_peers => 1
 );
 
 
