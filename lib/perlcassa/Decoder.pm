@@ -79,8 +79,6 @@ sub new {
 ##
 sub make_cql3_decoder {
     my $schema = shift;
-use Data::Dumper;
-print "kj ".Dumper($schema);
     my $decoder = perlcassa::Decoder->new();
     $decoder->{metadata} = $schema;
     return $decoder;
