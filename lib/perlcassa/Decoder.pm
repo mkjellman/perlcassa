@@ -3,7 +3,7 @@ package perlcassa::Decoder;
 use strict;
 use warnings;
 use base 'Exporter';
-our @EXPORT = qw(make_cql3_decoder pack_val);
+our @EXPORT = qw(make_cql3_decoder pack_val unpack_val);
 
 use Math::BigInt;
 use Math::BigFloat;
@@ -26,22 +26,36 @@ our %simple_packs = (
 	'org.apache.cassandra.db.marshal.Int32Type' 		=> 'l>',
 	'org.apache.cassandra.db.marshal.LongType' 		=> 'q>',
 	'org.apache.cassandra.db.marshal.UTF8Type' 		=> 'a*',
-	'org.apache.cassandra.db.marshal.CounterColumnType'	=> 'q>'
+	'org.apache.cassandra.db.marshal.CounterColumnType'	=> 'q>',
+	'ascii'							=> 'A*',
+	'varchar'						=> 'A*',
+	'boolean'						=> 'C',
+	'blob'							=> 'a*',
+	'counter'						=> 'q>',
+	'double'						=> 'd>',
+	'float'							=> 'f>',
+	'text'							=> 'a*'
 );
 
 our %complicated_unpack = (
 	'org.apache.cassandra.db.marshal.IntegerType'		=> \&unpack_IntegerType,
 	'org.apache.cassandra.db.marshal.DecimalType'		=> \&unpack_DecimalType,
 	'org.apache.cassandra.db.marshal.InetAddressType'	=> \&unpack_ipaddress,
-	'org.apache.cassandra.db.marshal.UUIDType'			=> \&unpack_uuid,
-	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&unpack_uuid
+	'org.apache.cassandra.db.marshal.UUIDType'		=> \&unpack_uuid,
+	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&unpack_uuid,
+	'bigint'						=> \&unpack_IntegerType,
+	'decimal'						=> \&unpack_DecimalType,
+	'int'							=> \&unpack_IntegerType,
+	'uuid'							=> \&unpack_uuid,
+	'timeuuid'						=> \&unpack_uuid,
+	'varint'						=> \&unpack_IntegerType
 );
 
 our %complicated_pack = (
 	'org.apache.cassandra.db.marshal.IntegerType'		=> \&pack_IntegerType,
 	'org.apache.cassandra.db.marshal.DecimalType'		=> \&pack_DecimalType,
 	'org.apache.cassandra.db.marshal.InetAddressType'	=> \&pack_ipaddress,
-	'org.apache.cassandra.db.marshal.UUIDType'			=> \&pack_uuid,
+	'org.apache.cassandra.db.marshal.UUIDType'		=> \&pack_uuid,
 	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&pack_uuid
 );
 
@@ -65,6 +79,8 @@ sub new {
 ##
 sub make_cql3_decoder {
     my $schema = shift;
+use Data::Dumper;
+print "kj ".Dumper($schema);
     my $decoder = perlcassa::Decoder->new();
     $decoder->{metadata} = $schema;
     return $decoder;
@@ -131,8 +147,7 @@ sub decode_column {
 #   An unpacked value
 ##
 sub unpack_val {
-    my $packed_value = shift;
-    my $data_type = shift;
+    my ($packed_value, $data_type) = @_;
 
     my $unpacked;
     if (defined($simple_packs{$data_type})) {
