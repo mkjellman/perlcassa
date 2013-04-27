@@ -388,4 +388,12 @@ sub decode_rows($) {
 	return \%row;
 }
 
+# see 4.2.5.4 of the native protocol spec
+sub decode_prepared($) {
+	my $prepared = shift;
+	
+	my $id = decode_short(substr($prepared, 0, 2));
+	my $metadata = decode_row(substr($prepared, 2, length($prepared)));	
+}
+
 1;

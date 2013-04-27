@@ -211,11 +211,72 @@ sub query($) {
 }
 
 sub prepare() {
+	my ($self, $query) = @_;
 
+	my $cv = AE::cv {};
+
+	my $handle = $self->{handle};
+
+	my $body = encode_long_string($query);
+
+	$cv->begin();
+	$handle->push_write(cassandra_bin => $version_codes{REQUEST},
+		$flags{NONE}, 0, $request_codes{PREPARE}, $body);
+
+	$handle->push_read(cassandra_bin => sub {
+		my ($msg) = @_;
+
+		if($msg->{opcode} eq $response_codes{RESULT}) {
+			my $result = decode_result($msg->{body});	
+		} elsif ($msg->{opcode} eq $response_codes{ERROR}) {
+			warn "Encountered an error: $msg->{body}\n";
+		} else {
+			warn "Unknown result from C*. Please file a bug.\n";
+		}
+
+		$cv->end();
+	});
+	return $cv;
 }
 
 sub execute() {
+	my ($self, $id, $values, $consistencylevel) = @_;
 
+	#<id><n><value_1>....<value_n><consistency>
+	if(!defined($consistencylevel)) {
+		$consistencylevel = $consistency_levels{ONE};
+	}
+
+	my $cv = AE::cv {};
+
+	my $handle = $self->{handle};
+
+	my $body = encode_short($id).encode_short(scalar(@{$values}));
+
+	foreach my $val (@{$values}) {
+		$body .= encode_bytes($val);	
+	}
+
+	$body .= $consistencylevel;
+
+	$cv->begin();
+	$handle->push_write(cassandra_bin => $version_codes{REQUEST},
+		$flags{NONE}, 0, $request_codes{EXECUTE}, $body);
+
+	$handle->push_read(cassandra_bin => sub {
+		my ($msg) = @_;
+
+		if($msg->{opcode} eq $response_codes{RESULT}) {
+			my $result = decode_result($msg->{body});
+		} elsif ($msg->{opcode} eq $response_codes{ERROR}) {
+			warn "Encountered an error: $msg->{body}\n";
+		} else {
+			warn "Unknown result from C*. Please file a bug.\n";
+		}
+
+		$cv->end();
+	});
+	return $cv;
 }
 
 1;
