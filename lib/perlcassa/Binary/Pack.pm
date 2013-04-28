@@ -151,6 +151,14 @@ sub encode_short_bytes($) {
 	return $len.pack('a*',$bytes);
 }
 
+sub decode_short_bytes($) {
+	my $bytes = shift;
+
+	my $len = decode_short(substr($bytes, 0, 2));
+	my $bytes = unpack("a$len", $bytes);
+	return $bytes;
+}
+
 # [option] A pair of <id><value> where <id> is a [short] representing
 # the options id and <value> depends on that options (and can be
 # of size 0). THe supported id (and the corresponding <value>) 
@@ -392,7 +400,7 @@ sub decode_rows($) {
 sub decode_prepared($) {
 	my $prepared = shift;
 	
-	my $id = decode_short(substr($prepared, 0, 2));
+	my $uuid = decode_short_bytes(substr($prepared, 0, 20));
 	my $metadata = decode_row(substr($prepared, 2, length($prepared)));	
 }
 
