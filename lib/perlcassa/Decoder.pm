@@ -234,6 +234,11 @@ sub bigint_to_pack {
 sub unpack_IntegerType {
     my $packed_value = shift;
     my $data_type = shift;
+
+    if(!defined($packed_value)) {
+	return undef;
+    }
+
     my $ret = hex_to_bigint(unpack("B1XH*", $packed_value));
     my $unpacked_int = $ret->bstr();
     return $unpacked_int;

@@ -131,7 +131,7 @@ sub decode_bytes($) {
 
 	my $len = decode_int(substr($bytes, 0, 4));
 	
-	if($len >= 0) {
+	if(defined($len) && $len > 0) {
 		return substr($bytes, 4, $len);
 	}
 
@@ -155,8 +155,8 @@ sub decode_short_bytes($) {
 	my $bytes = shift;
 
 	my $len = decode_short(substr($bytes, 0, 2));
-	my $bytes = unpack("a$len", $bytes);
-	return $bytes;
+	my $bytesdec = unpack("a$len", $bytes);
+	return $bytesdec;
 }
 
 # [option] A pair of <id><value> where <id> is a [short] representing
@@ -376,7 +376,7 @@ sub decode_rows($) {
 				# what is our def for this column?
 				my $coltype = $option_ids{$columnsdefs[$c]};
 				my $colname = $columnnames[$c];
-
+print "colname is $colname\n";
 				my $len = decode_int(substr($rows_content, $content_consumed, 4));
 				my $colval = decode_bytes(substr($rows_content, $content_consumed, $len+4));
 

@@ -199,6 +199,8 @@ sub query($) {
 
 		if($msg->{opcode} eq $response_codes{RESULT}) {
 			my $result = decode_result($msg->{body});
+use Data::Dumper;
+print Dumper($result);
 		} elsif ($msg->{opcode} eq $response_codes{ERROR}) {
 			warn "Encountered an error: $msg->{body}\n";
 		} else {
