@@ -731,9 +731,21 @@ sub _call() {
 			$name = $self->_pack_values($name, $columnfamily, 'column');
 		}
 
+		# deal with the condition where we are just passed a sclar for the key
+		# this is the common use case, but we need to support composites in keys as well
+		unless (ref($key) eq "HASH") {
+			my %keyhash = ('values' => [$key]);
+			$name = $self->_pack_values(\%keyhash, $columnfamily, 'key');
+		} else {
+			$key = $self->_pack_values($key, $columnfamily, 'key');
+		}
 
-		# if the operation is to a CounterColumn we wont have a value so don't pack it
-		unless ($thrift_operation eq 'add') {
+		# did user explicitly tell us not to pack it?
+		if ($self->{donotpack} == 1) {
+			$packedvalue = $value;
+		} elsif ($thrift_operation eq 'add') {
+			# if the operation is to a CounterColumn we wont have a value so don't pack it
+		} else {
 			# pack the value to comply with the default column family validator on this column family
 			my %valuehash = ('values' => [$value]);
 			$packedvalue = $self->_pack_values(\%valuehash, $columnfamily, 'value', $name);
@@ -1104,7 +1116,7 @@ sub _pack_values() {
 	} else {
 		# use validators provided in composite hash if defined
 		if (defined($composite{column_comparators}) && scalar(@{$composite{column_comparators}}) > 0) {
-			@validationComparators = @{$composite{column_comparatorss}};
+			@validationComparators = @{$composite{column_comparators}};
 		} else {
 			@validationComparators = @{$self->{comparators}{$columnfamily}};
 		}
