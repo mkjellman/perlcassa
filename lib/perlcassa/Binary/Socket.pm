@@ -173,19 +173,21 @@ AnyEvent::Handle::register_read_type cassandra_bin => sub {
 	sub {
 		return unless $_[0]{rbuf};
 
-		my $rbuf_ref = \$_[0]{rbuf};
-		my $header = substr($$rbuf_ref, 0, 8, ''); #get the first 8 bytes for the frame header
-		my $response = unpack("H*", $header);
+		shift->unshift_read(chunk => 8, sub {
+			my $response = unpack("H*", $_[1]);
 
-		$state{version} = hex(substr($response, 0, 2));
-		$state{flags} = hex(substr($response, 2, 2));
-		$state{stream} = hex(substr($response, 4, 2));
-		$state{opcode} = substr($response, 6, 2);
-		$state{length} = hex(substr($response, 8, 8));
+			$state{version} = hex(substr($response, 0, 2));
+			$state{flags} = hex(substr($response, 2, 2));
+			$state{stream} = hex(substr($response, 4, 2));
+			$state{opcode} = substr($response, 6, 2);
+			$state{length} = hex(substr($response, 8, 8));
 
-		unless($state{length} == 0) {
-			$state{body} = substr($$rbuf_ref, 0, $state{length}, '');
-		}
+			$state{length} = hex(substr($response, 8, 8));
+
+			shift->unshift_read(chunk => $state{length}, sub {
+				$state{body} = $_[1];
+			});
+		});
 
 		$cb->(\%state);
 		undef %state;
@@ -280,12 +282,13 @@ sub _query($) {
 
 	my %obj = %{$queryobj};
 	my $query = $obj{query};
-	my $consistencylevel = $consistency_levels{$obj{consistencylevel}};
-	
+	my $consistencylevel;
 
-	if(!defined($consistencylevel)) {
+	if(defined($obj{consistencylevel})) {
+		$consistencylevel = $consistency_levels{$obj{consistencylevel}};
+	} else {
 		$consistencylevel = $consistency_levels{ONE};
-	}
+	} 
 
 	my $cv = AE::cv {};
 
@@ -308,34 +311,49 @@ sub _query($) {
 	$handle->push_write(cassandra_bin => $version_codes{REQUEST},
 		$flags{NONE}, $streamobj->{id}, $request_codes{QUERY}, $body.$consistencylevel);
 
-	$handle->push_read(cassandra_bin => sub {
-		my ($msg) = @_;
+	$handle->on_read(sub {
+		my %state = ();
+		shift->unshift_read(chunk => 8, sub {
+			my $response = unpack("H*", $_[1]);
 
-		#get this stream object now that we have a result from C*
-		my $streamobj = $self->{inusestreams}[$msg->{stream}];
-		my %qobj = %{$streamobj->{queryobj}};
+			$state{version} = hex(substr($response, 0, 2));
+			$state{flags} = hex(substr($response, 2, 2));
+			$state{stream} = hex(substr($response, 4, 2));
+			$state{opcode} = substr($response, 6, 2);
+			$state{length} = hex(substr($response, 8, 8));
 
-		if($msg->{opcode} eq $response_codes{RESULT}) {
-			my $result = decode_result($msg->{body});
-			$qobj{result} = $result;
+			$state{length} = hex(substr($response, 8, 8));
+			shift->unshift_read(chunk => $state{length}, sub {
+				$state{body} = $_[1];
 
-			if(defined($qobj{cb})) {
-				$qobj{cb}(\%qobj);
-			}
-		} elsif ($msg->{opcode} eq $response_codes{ERROR}) {
-			warn "Encountered an error: $msg->{body}\n";
-			
-		} else {
-			warn "Unknown result from C*. Please file a bug.\n";
-		}
+				#get this stream object now that we have a result from C*
+				my $streamobj = $self->{inusestreams}[$state{stream}];
+				my %qobj = %{$streamobj->{queryobj}};
 
-		# release stream object and cleanup so other blocked tasks can use it
-		$streamobj->{queryobj} = undef;
-		$self->{avaliablestreams}[$msg->{stream}] = $streamobj;
-		$self->{inusestreams}[$msg->{stream}] = undef;
+				if($state{opcode} eq $response_codes{RESULT}) {
+					my $result = decode_result($state{body});
+					$qobj{result} = $result;
+
+					if(defined($qobj{cb})) {
+						$qobj{cb}(\%qobj);
+					}
+				} elsif ($state{opcode} eq $response_codes{ERROR}) {
+					warn "Encountered an error: $state{body}\n";
+					
+				} else {
+					warn "Unknown result from C*. Please file a bug.\n";
+				}
+
+				# release stream object and cleanup so other blocked tasks can use it
+				$streamobj->{queryobj} = undef;
+				$self->{avaliablestreams}[$state{stream}] = $streamobj;
+				$self->{inusestreams}[$state{stream}] = undef;
 
 
-		$cv->end();
+				$cv->end();
+			});
+		});
+
 	});
 	return $cv;
 }

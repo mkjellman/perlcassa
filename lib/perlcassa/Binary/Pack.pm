@@ -353,7 +353,6 @@ sub decode_rows($) {
 		my $colname_len = decode_short(substr($rows, $offset, 2));
 		my $colname = decode_string(substr($rows, $offset, $colname_len+$offset+2));
 		my ($optid, $optval) = decode_option(substr($rows, $offset+$colname_len+2, 2));
-
 		push(@columnsdefs, $optid);
 		push(@columnnames, $colname);
 		$offset = $offset + $colname_len + 2 + 2;
@@ -365,31 +364,38 @@ sub decode_rows($) {
 
 	my $rows_content;
 	my %row = ();
+	my $content_consumed = 0;
 	if($rows_count > 0) {
 		#<rows_content>
 		$rows_content = substr($rows, $offset, length($rows));
-		my $content_consumed = 0;
-		$row{row_count} = $rows_count;
+		$row{result_count} = $rows_count;
 		for (my $r = 0; $r < $rows_count; $r++) {
 			my $rowname;
+			my %colres = ();
 			for (my $c = 0; $c < $columns_count; $c++) {
 				# what is our def for this column?
 				my $coltype = $option_ids{$columnsdefs[$c]};
 				my $colname = $columnnames[$c];
-#print "colname is $colname\n";
 				my $len = decode_int(substr($rows_content, $content_consumed, 4));
-				my $colval = decode_bytes(substr($rows_content, $content_consumed, $len+4));
 
-				#first column is the row
-				if($c == 0) {
-					$rowname = $colval;	
+				my $colval;
+				#is the column null for this key?
+				if($len == -1) {
+					$content_consumed = $content_consumed + 4;
+				} else {
+					$colval = decode_bytes(substr($rows_content, $content_consumed, $len+4));
+					$colval = unpack_val($colval, $coltype);
+					$content_consumed = $content_consumed + $len + 4;	
+
+					#first column is the row
+					if($c == 0) {
+						$rowname = $colval;	
+					}
 				}
 
-				$colval = unpack_val($colval, $coltype);
-
-				$row{$rowname}{$colname} = $colval;
-				$content_consumed = $content_consumed + $len + 4;	
+				$colres{$colname} = $colval;
 			}
+			push(@{$row{$rowname}},\%colres); 
 		}
 	}
 
