@@ -48,7 +48,8 @@ our %complicated_unpack = (
 	'int'							=> \&unpack_IntegerType,
 	'uuid'							=> \&unpack_uuid,
 	'timeuuid'						=> \&unpack_uuid,
-	'varint'						=> \&unpack_IntegerType
+	'varint'						=> \&unpack_IntegerType,
+	'inet'							=> \&unpack_ipaddress
 );
 
 our %complicated_pack = (
