@@ -334,8 +334,9 @@ sub column_family() {
 #   a perlcassa:CQL3Result object
 ##
 sub exec() {
-	my ($self, $query, $params) = @_;
+	my ($self, $query, $params, $opts) = @_;
     my $compression = Cassandra::Compression::NONE;
+	my $consistencylevel = $opts{consistency_level} || $self->{write_consistency_level};
 
 	# Bind parameters
 	my ($prepared_query, $position_map) = prepare_prepared_cql3($query);
@@ -375,16 +376,14 @@ sub exec() {
 		$query_result = $client->execute_prepared_cql3_query(
             $itemid,
 			$values,
-			Cassandra::Compression::NONE,
-			Cassandra::ConsistencyLevel::ONE
+			$consistencylevel
 		);
 		alarm($alarm);
 	} else {
 		$query_result = $client->execute_prepared_cql3_query(
             $itemid,
 			$values,
-			Cassandra::Compression::NONE,
-			Cassandra::ConsistencyLevel::ONE
+			$consistencylevel
 		);
 	}
 
