@@ -334,7 +334,7 @@ sub column_family() {
 #   a perlcassa:CQL3Result object
 ##
 sub exec() {
-	my ($self, $query, $params, $opts) = @_;
+	my ($self, $query, $params, %opts) = @_;
     my $compression = Cassandra::Compression::NONE;
 	my $consistencylevel = $opts{consistency_level} || $self->{write_consistency_level};
 
