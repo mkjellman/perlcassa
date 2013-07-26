@@ -5,6 +5,7 @@ use warnings;
 use base 'Exporter';
 our @EXPORT = qw(make_cql3_decoder pack_val unpack_val);
 
+use Encode;
 use Math::BigInt;
 use Math::BigFloat;
 use Socket qw(AF_INET);
@@ -147,6 +148,8 @@ sub decode_column {
 ##
 sub unpack_val {
     my ($packed_value, $data_type) = @_;
+
+    Encode::_utf8_off($packed_value);
 
     my $unpacked;
     if (defined($simple_packs{$data_type})) {
