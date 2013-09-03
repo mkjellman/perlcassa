@@ -566,7 +566,7 @@ sub get_validators() {
 	$default_columnvalidation =~ s/org\.apache\.cassandra\.db\.marshal\.//g;
 
 	my @column_validators;
-	push (@column_validators, $key_validationclass);
+        push (@column_validators, $default_columnvalidation);
 
 	my %validators = (
 		'column'	=> \@column_validators,
