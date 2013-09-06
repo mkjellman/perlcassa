@@ -856,6 +856,7 @@ sub bulk_insert() {
 	} else {
 		$client->batch_mutate( { $key => { $columnfamily => \@mutations }}, $consistencylevel);
 	}
+        close_conn();
 }
 
 
