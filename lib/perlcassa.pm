@@ -6,7 +6,7 @@ perlcassa - Perl Client for Apache Cassandra
 
 =head1 VERSION
 
-v0.050
+v0.060
 
 =head1 SYNOPSIS
 
@@ -154,7 +154,7 @@ limitations under the License.
 use strict;
 use warnings;
 
-our $VERSION = '0.050';
+our $VERSION = '0.060';
 
 use perlcassa::Client qw/setup close_conn client_setup/;
 use perlcassa::CQL3Result;
