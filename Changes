@@ -30,9 +30,10 @@ Change History
 	- Incompatible changes made to CQL3 results. Removed ttl and timestamp columns. Result columns now point directly to the values.
     	- Makefile now does not do live tests by default, they must now be enabled manually.
 
-dev
+0.060   October 17, 2013
     - The CQL3 exec call has been changed to use a prepared query underneath.
       This means each exec will connect to the cassandra server twice.
         - This fixes the issue with CQL 3.0.2 where numeric types were not
           being quoted correctly.
+    - Fix issue with UTF8 related strings
 

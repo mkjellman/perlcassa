@@ -26,7 +26,6 @@ our %simple_packs = (
 	'org.apache.cassandra.db.marshal.DoubleType' 		=> 'd>',
 	'org.apache.cassandra.db.marshal.Int32Type' 		=> 'l>',
 	'org.apache.cassandra.db.marshal.LongType' 		=> 'q>',
-	'org.apache.cassandra.db.marshal.UTF8Type' 		=> 'a*',
 	'org.apache.cassandra.db.marshal.CounterColumnType'	=> 'q>',
 	'ascii'							=> 'A*',
 	'varchar'						=> 'A*',
@@ -44,6 +43,7 @@ our %complicated_unpack = (
 	'org.apache.cassandra.db.marshal.InetAddressType'	=> \&unpack_ipaddress,
 	'org.apache.cassandra.db.marshal.UUIDType'		=> \&unpack_uuid,
 	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&unpack_uuid,
+	'org.apache.cassandra.db.marshal.UTF8Type'		=> \&unpack_UTF8,
 	'bigint'						=> \&unpack_IntegerType,
 	'decimal'						=> \&unpack_DecimalType,
 	'int'							=> \&unpack_IntegerType,
@@ -58,7 +58,8 @@ our %complicated_pack = (
 	'org.apache.cassandra.db.marshal.DecimalType'		=> \&pack_DecimalType,
 	'org.apache.cassandra.db.marshal.InetAddressType'	=> \&pack_ipaddress,
 	'org.apache.cassandra.db.marshal.UUIDType'		=> \&pack_uuid,
-	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&pack_uuid
+	'org.apache.cassandra.db.marshal.TimeUUIDType'		=> \&pack_uuid,
+	'org.apache.cassandra.db.marshal.UTF8Type' 		=> \&pack_UTF8,
 );
 
 sub new {
@@ -149,7 +150,12 @@ sub decode_column {
 sub unpack_val {
     my ($packed_value, $data_type) = @_;
 
-    Encode::_utf8_off($packed_value);
+    if (Encode::is_utf8($packed_value)) {
+        # We should not be getting utf8 strings... they should be byte strings
+        # something is odd with the thrift decoding stuff
+        #warn("[BUG] Found utf8 string in unpack, converting.");
+        Encode::_utf8_off($packed_value);
+    }
 
     my $unpacked;
     if (defined($simple_packs{$data_type})) {
@@ -162,7 +168,7 @@ sub unpack_val {
         my $unpack_sub = $complicated_unpack{$data_type};
         $unpacked = $unpack_sub->($packed_value);
     } else {
-            die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
+        die("[ERROR] Attempted to unpack unimplemented data type. ($data_type)");
     }
     return $unpacked;
 }
@@ -177,7 +183,7 @@ sub pack_val {
     } elsif ($data_type =~ /(List|Map|Set)Type/) {
         # Need to pack the collection
         $packed = pack_collection($value, $data_type);
-    } elsif (defined($complicated_unpack{$data_type})) {
+    } elsif (defined($complicated_pack{$data_type})) {
         # It is a complicated type
         my $pack_sub = $complicated_pack{$data_type};
         $packed = $pack_sub->($value);
@@ -338,6 +344,20 @@ sub pack_uuid {
     my $encoded = pack("H8 H4 H4 H4 H12", @values);
     return $encoded;
 }
+
+
+# Takes a string and packs it
+# TODO more testing
+sub pack_UTF8 {
+    # I think it is this simple...
+    return pack("a*", $_[0]);
+}
+
+# Takes utf8 bytes and returns a utf8 string
+sub unpack_UTF8 {
+    return decode_utf8($_[0]);
+}
+
 
 # Unpack a collection type. List, Map, or Set
 # Returns:

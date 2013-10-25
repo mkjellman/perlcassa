@@ -6,10 +6,13 @@ use Test::More;
 use Math::BigInt;
 use Math::BigFloat;
 use UUID::Tiny;
+use utf8;
 
 use Data::Dumper;
 
 $|++;
+
+use constant DEBUG => 0;
 
 use vars qw($test_host $test_keyspace);
 
@@ -18,7 +21,7 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 42;
+plan tests => 47;
 
 require_ok( 'perlcassa' );
 
@@ -51,16 +54,42 @@ $res = $dbh->exec("CREATE TABLE $test_keyspace.all_types (
 ok($res, "Create test table all_types.");
 
 # Check the text types
-$res = $dbh->exec("INSERT INTO all_types (pk, t_ascii, t_text, t_varchar) VALUES ('strings_test', 'v_ascii', 'v_text', 'v_v\xC3\xA1rchar')");
+$res = $dbh->exec("INSERT INTO all_types (pk, t_ascii, t_text, t_varchar) VALUES ('strings_test', 'v_ascii', 'v_text', 'v_várchar')");
 $res = $dbh->exec("SELECT pk, t_ascii, t_text, t_varchar FROM all_types WHERE pk = 'strings_test'");
 my $row_text = $res->fetchone();
 is($row_text->{t_ascii}, 'v_ascii', "Check ascii type.");
 is($row_text->{t_text}, 'v_text', "Check text type.");
-TODO: {
-    # TODO check UTF8 support
-    local $TODO = "UTF8 strings are not implemented";
-    is($row_text->{t_varchar}, "v_v\xC3\xA1rchar", "Check varchar type.");
+ok(Encode::is_utf8($row_text->{t_varchar}), "Type varchar should return as utf8 encoded.");
+if (DEBUG) {
+    use bytes;
+    print "database: '".unpack("H*",$row_text->{t_varchar})."'\n";
+    print "expected: '".unpack("H*", "v_várchar")."'\n";
 }
+is($row_text->{t_varchar}, "v_várchar", "Check varchar type.");
+
+# Check the text types packing
+my $str = "0á0ݞ1";
+my $param_str02 = { utf8 => $str, ascii => "deadbeef?", };
+$res = $dbh->exec("INSERT INTO all_types (pk, t_ascii, t_varchar) VALUES ('strings02_test', :ascii, :utf8)", $param_str02);
+$res = $dbh->exec("SELECT * FROM all_types WHERE pk = 'strings02_test'");
+my $row_text02 = $res->fetchone();
+ok(Encode::is_utf8($row_text02->{t_varchar}), "Type varchar should return as utf8 encoded.");
+is($row_text02->{t_varchar}, $str, "Check varchar type.");
+if (DEBUG) {
+    use bytes;
+    print "database: '".join(":", map {ord} split(//,$str))."'\n";
+    print "database: '".unpack("H*",$row_text02->{t_varchar})."'\n";
+    print "expected: '".unpack("H*",$str)."'\n";
+}
+
+#my $json = encode_json({1=>$row_text02->{t_varchar}});
+#is($json, '{"1":"0á0ݞ1"}', "Testing json output");
+#if (DEBUG) {
+#    print "Test: '$json' done\n"; # XXX remove
+#    use bytes;
+#    print "json out: '".unpack("H*",$json)."'\n";
+#    print "expected: '".unpack("H*",'{"1":"0á0ݞ1"}')."'\n";
+#}
 
 # Check boolean true and false
 $res = $dbh->exec("INSERT INTO all_types (pk, t_boolean) VALUES ('bool_test', false)");
@@ -197,7 +226,7 @@ is_deeply($row_m->{t_map}, {15=>18, 16=>5, 17=>13, 18=>21, 19=>21},
     "Check map collection type.");
 
 
-# Test getting ttl and timestamp
+# Test getting value ttl and timestamp
 $res = $dbh->exec("INSERT INTO all_types (pk, t_ascii) VALUES ( 'ttl_test', 'to be, or not to be') USING TTL 5");
 $res = $dbh->exec("SELECT pk, t_ascii, TTL(t_ascii) FROM all_types WHERE pk = 'ttl_test'");
 my $row_ttl = $res->fetchone();
@@ -215,14 +244,34 @@ $row_ttl = $res->fetchone();
 is($row_ttl, undef, "Check TTL expiration.");
 
 # Test UUID types
-my $uuid_params01 = { tuuid => create_UUID_as_string(UUID_V1), uuid => create_UUID_as_string(UUID_V4) };
+my $param_uuid01 = { tuuid => create_UUID_as_string(UUID_V1), uuid => create_UUID_as_string(UUID_V4) };
 $res = $dbh->exec("INSERT INTO all_types (pk, t_timeuuid, t_uuid) VALUES ( 'uuid_test', :tuuid, :uuid)",
-    $uuid_params01
+    $param_uuid01
 );
 $res = $dbh->exec("SELECT pk, t_timeuuid, t_uuid FROM all_types WHERE pk = 'uuid_test'");
 my $row01_uuid01 = $res->fetchone();
-is($row01_uuid01->{t_timeuuid}, $uuid_params01->{tuuid}, "Check Time UUID insert and retrieval.");
-is($row01_uuid01->{t_uuid}, $uuid_params01->{uuid}, "Check UUID insert and retrieval.");
+is($row01_uuid01->{t_timeuuid}, $param_uuid01->{tuuid}, "Check Time UUID insert and retrieval.");
+is($row01_uuid01->{t_uuid}, $param_uuid01->{uuid}, "Check UUID insert and retrieval.");
+
+
+# Test timestamp types
+my $param_ts01 = { ts => 1374679784862 };
+$res = $dbh->exec("INSERT INTO all_types (pk, t_timestamp) VALUES ( 'timestamp_test', :ts)",
+    $param_ts01
+);
+$res = $dbh->exec("SELECT pk, t_timestamp FROM all_types WHERE pk = 'timestamp_test'");
+my $row01_ts01 = $res->fetchone();
+is($row01_ts01->{t_timestamp}, $param_ts01->{ts}, "Check timestamp insert and retrieval.");
+
+
+# Test blob types
+my $param_blob = { blob => pack("H*", "fedcba98765432100123456789abcdef"), };
+$res = $dbh->exec("INSERT INTO all_types (pk, t_blob) VALUES ( 'blob_test', :blob)",
+    $param_blob
+);
+$res = $dbh->exec("SELECT pk, t_blob FROM all_types WHERE pk = 'blob_test'");
+my $row01_blob = $res->fetchone();
+is($row01_blob->{t_blob}, $param_blob->{blob}, "Check blob insert and retrieval.");
 
 
 # Clean up our tables
@@ -231,33 +280,30 @@ ok($res, "Drop test table all_types.");
 $res = $dbh->exec("DROP TABLE collection_types");
 ok($res, "Drop test table collection_types.");
 
-
 $dbh->finish();
 
 
 # Still need to implement/fix and test
-#  blob
-#  timestamp
 #  counters
-
-# Partial Support. UTF8 does not work correctly
-#  text
-#  varchar
 
 # Working 
 #  ascii
 #  bigint
+#  blob
 #  boolean
 #  decimal
 #  double
 #  float
 #  inet
 #  int
-#  varint
+#  list
 #  map
 #  set
-#  list
+#  text
+#  timestamp
 #  timeuuid
 #  uuid
+#  varchar
+#  varint
 
 

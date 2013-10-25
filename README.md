@@ -4,7 +4,7 @@ perlcassa - Perl Client for Apache Cassandra
 
 # VERSION
 
-v0.050
+v0.060
 
 ## INSTALLATION
 perlcassa can be installed by doing the usual:
