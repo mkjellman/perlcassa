@@ -734,7 +734,7 @@ sub _call() {
 		# this is the common use case, but we need to support composites in keys as well
 		unless (ref($key) eq "HASH") {
 			my %keyhash = ('values' => [$key]);
-			$name = $self->_pack_values(\%keyhash, $columnfamily, 'key');
+			$key = $self->_pack_values(\%keyhash, $columnfamily, 'key');
 		} else {
 			$key = $self->_pack_values($key, $columnfamily, 'key');
 		}
