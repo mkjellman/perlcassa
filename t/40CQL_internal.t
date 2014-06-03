@@ -3,12 +3,13 @@
 use strict;
 use warnings;
 use Test::More;
+use utf8;
 
 use Data::Dumper;
 
 $|++;
 
-plan tests => 27;
+plan tests => 28;
 
 use perlcassa;# qw{prepare_prepared_cql3};
 
@@ -132,4 +133,9 @@ TODO: {
     my $packed07 = perlcassa::Decoder::pack_val( $dec07, "org.apache.cassandra.db.marshal.DecimalType");
     is(unpack("H*", $packed07), $hex07, "Pack Decimal Type ok, positive large magnitude");
 }
+
+my $hex08 = "0004000361616100066262626262620009e383aae383b3e382b40003646464";
+my $list08 = ['aaa','bbbbbb','リンゴ','ddd'];
+my $packed08 = perlcassa::Decoder::pack_val( $list08, 'org.apache.cassandra.db.marshal.ListType(org.apache.cassandra.db.marshal.UTF8Type)');
+is(unpack("H*", $packed08), $hex08, "Pack List of UTF8 ok");
 

@@ -21,7 +21,7 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 47;
+plan tests => 49;
 
 require_ok( 'perlcassa' );
 
@@ -193,16 +193,17 @@ is($row_inet6->{t_inet}, "2001:db8:85a3:42:1000:8a2e:370:7334", "Check inet6 typ
 
 
 # Create Collections Table for test
-$res = $dbh->exec("CREATE TABLE collection_types (pk text PRIMARY KEY, t_list list<int>, t_set set<int>, t_map map<int, int>)");
+$res = $dbh->exec("CREATE TABLE collection_types (pk text PRIMARY KEY, t_list list<int>, t_set set<int>, t_set_text set<text>, t_map map<int, int>)");
 ok($res, "Create test table collection_types.");
 
 # Test empty collections
 $res = $dbh->exec("INSERT INTO collection_types (pk) VALUES ('empty_collection_test')");
-$res = $dbh->exec("SELECT pk, t_list, t_set, t_map FROM collection_types WHERE pk = 'empty_collection_test'");
+$res = $dbh->exec("SELECT pk, t_list, t_set, t_set_text, t_map FROM collection_types WHERE pk = 'empty_collection_test'");
 my $row_ec = $res->fetchone();
 is_deeply($row_ec->{t_list}, undef, "Check list collection type (empty).");
 is_deeply($row_ec->{t_map}, undef, "Check map collection type (empty).");
 is_deeply($row_ec->{t_set}, undef, "Check set collection type (empty).");
+is_deeply($row_ec->{t_set_text}, undef, "Check set collection type (empty).");
 
 # Test 3 element list
 $res = $dbh->exec("INSERT INTO collection_types (pk, t_list) VALUES ('list_test', [91, 92, 93])");
@@ -217,6 +218,14 @@ $res = $dbh->exec("SELECT pk, t_set FROM collection_types WHERE pk = 'set_test'"
 my $row_s = $res->fetchone();
 is_deeply($row_s->{t_set}, [1,3,4,5,9],
     "Check set collection type.");
+
+# Test set of text
+my $set_text_params = { set => [ 'aaaaaa','bbbbbb','dddddd','グラニースミス','リンゴ' ] };
+$res = $dbh->exec("INSERT INTO collection_types (pk, t_set_text) VALUES ('set_test', :set)", $set_text_params);
+$res = $dbh->exec("SELECT pk, t_set_text FROM collection_types WHERE pk = 'set_test'");
+my $row_st = $res->fetchone();
+is_deeply($row_st->{t_set_text}, ['aaaaaa','bbbbbb','dddddd','グラニースミス','リンゴ'],
+    "Check set of text collection type along with packing set.");
 
 # Test map
 $res = $dbh->exec("INSERT INTO collection_types (pk, t_map) VALUES ('map_test', {15: 18, 16: 5, 17: 13, 18: 21, 19: 21})");

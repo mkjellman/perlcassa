@@ -350,7 +350,7 @@ sub pack_uuid {
 # TODO more testing
 sub pack_UTF8 {
     # I think it is this simple...
-    return pack("a*", $_[0]);
+    return Encode::encode_utf8($_[0]);
 }
 
 # Takes utf8 bytes and returns a utf8 string
