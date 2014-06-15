@@ -37,3 +37,8 @@ Change History
           being quoted correctly.
     - Fix issue with UTF8 related strings
 
+DEV
+    - Fix issue with encoding certain UTF8 values (Issue #55)
+    - Update Prereqs to include UUID::Tiny for UUID types
+    - Fix issue with Cassandra 2.0 and timestamp columns (Issue #57)
+

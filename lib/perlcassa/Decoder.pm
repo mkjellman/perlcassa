@@ -27,6 +27,7 @@ our %simple_packs = (
 	'org.apache.cassandra.db.marshal.Int32Type' 		=> 'l>',
 	'org.apache.cassandra.db.marshal.LongType' 		=> 'q>',
 	'org.apache.cassandra.db.marshal.CounterColumnType'	=> 'q>',
+	'org.apache.cassandra.db.marshal.TimestampType'		=> 'q>',
 	'ascii'							=> 'A*',
 	'varchar'						=> 'A*',
 	'boolean'						=> 'C',
