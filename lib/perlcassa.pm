@@ -335,6 +335,8 @@ sub column_family() {
 ##
 sub exec() {
 	my ($self, $query, $params, %opts) = @_;
+	return $self->exec_prepared($query, $params, %opts) if ref($query);
+
     my $compression = Cassandra::Compression::NONE;
 	my $consistencylevel = $opts{consistency_level} || $self->{write_consistency_level};
 
@@ -352,45 +354,59 @@ sub exec() {
                 ;
     }   
 
-    my $cql3_prepared = $client->prepare_cql3_query($prepared_query, $compression);
+    my $prep = $client->prepare_cql3_query($prepared_query, $compression);
 
-    my $itemid = $cql3_prepared->{itemId};
-    my $types = $cql3_prepared->{variable_types};
-    my $max = $cql3_prepared->{count} - 1;
+	my @values = map {
+		pack_val(
+			$params->{$position_map->[$_]},
+			$prep->{variable_types}[$_]);
+	} 0 .. $prep->{count} - 1;
 
-    my $values = [];
-    for my $i (0..$max) {
-        # Get the param name and value from the position map
-        my $param_name = $position_map->[$i];
-        my $value = $params->{$param_name};
-        # Get the type, pack the value, and shove it into the array
-        my $type = $types->[$i];
-        my $encoded = pack_val($value, $type);
-        $values->[$i] = $encoded;
-    }
+	return $self->exec_prepared_packed($prep, \@values, %opts);
+}
 
-	my $query_result;
-	if (defined($self->{timeout})) {
-		local $SIG{ALRM} = sub { die "CQL Query Timed Out"; };
-		my $alarm = alarm($self->{timeout});
-		$query_result = $client->execute_prepared_cql3_query(
-            $itemid,
-			$values,
-			$consistencylevel
-		);
-		alarm($alarm);
+sub exec_prepared {
+	my ($self, $prep, $values, %opts) = @_;
+
+	if (ref($values) eq 'ARRAY') { # position parameters
+		$values->[$_] = pack_val($values->[$_], $prep->{variable_types}[$_])
+			for 0 .. @$values - 1;
+
 	} else {
-		$query_result = $client->execute_prepared_cql3_query(
-            $itemid,
-			$values,
-			$consistencylevel
-		);
+		return undef;
 	}
 
-	my $resp = perlcassa::CQL3Result->new();
-	$resp->process_cql3_results($query_result);
+	return $self->exec_prepared_packed($prep, $values, %opts);
+}
 
-	return $resp;
+sub exec_prepared_packed {
+	my ($self, $prep, $packed, %opts) = @_;
+
+	my $alarm = $self->{timeout};;
+	if (defined($alarm)) {
+		local $SIG{ALRM} = sub { die "CQL Query Timed Out"; };
+		$alarm = alarm($alarm);
+	}
+
+	my $res = $self->{client}->execute_prepared_cql3_query(
+		$prep->{itemId},
+		$packed,
+		$opts{consistency_level} || $self->{write_consistency_level}
+	);
+
+	alarm($alarm) if defined($alarm);
+
+	my $r = perlcassa::CQL3Result->new();
+	$r->process_cql3_results($res);
+	return $r;
+}
+
+sub prepare {
+	my ($self, $query) = @_;
+	$self->client_setup('keyspace' => $self->{keyspace});
+	return eval {
+		$self->{client}->prepare_cql3_query($query, Cassandra::Compression::NONE)
+	} or die "CQL Query syntax error detected; failed to prepare";
 }
 
 sub prepare_prepared_cql3 {

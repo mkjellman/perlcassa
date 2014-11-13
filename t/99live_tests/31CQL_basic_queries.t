@@ -15,7 +15,7 @@ use vars qw($test_host $test_keyspace);
 $test_host = 'localhost';
 $test_keyspace = 'xx_testing_cql';
 
-plan tests => 14;
+plan tests => 17;
 
 require_ok( 'perlcassa' );
 
@@ -77,6 +77,16 @@ is($row->{user_id}, $param_03->{1}, "Check user_id.");
 is($row->{first_name}, $param_03->{2}, "Check first_name.");
 is($row->{last_name}, $param_03->{3}, "Check last_name.");
 is($row->{year_of_birth}, $param_03->{4}, "Check year_of_birth.");
+
+
+my $prep = $dbh->prepare("SELECT * FROM $test_keyspace.user_profiles WHERE user_id = ?");
+ok($prep, "prepared a positional parameter query");
+$res = $dbh->exec($prep, [123]);
+
+is($res->{rowcount}, 1, "Select single row.");
+$row = $res->fetchone();
+is($row->{user_id}, 123, "Positional parameter search works");
+
 
 $dbh->finish();    
 
