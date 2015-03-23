@@ -18,10 +18,16 @@ v0.060
         'seed_nodes' => ['host1.cassandra.local',
                      'host2.cassandra.local',
                      'host3.cassandra.local'],
-        #optional
+        # optional
         'write_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
         'read_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
-        'port' => '9160'
+        'port' => '9160',
+
+        # authentication
+        'credentials' => {
+           'username' => 'myusername',
+           'password' => 'mypassword'
+        },
     );
     
     my %composite = ('values' => ['name_pt1', 'name_pt2']);
@@ -224,7 +230,8 @@ sub new() {
 		failure_thread_running => 0,
 		max_retry => $opt{max_retry} || 2, # max number of times to try and connect for this request
 		donotpack => $opt{donotpack} || 0, #will insert with raw values and not autopack values
-		do_not_discover_peers => $opt{do_not_discover_peers} || undef
+		do_not_discover_peers => $opt{do_not_discover_peers} || undef,
+                credentials => $opt{credentials} || undef
 	}, $class;
 
 	# generate the inital randomized server list

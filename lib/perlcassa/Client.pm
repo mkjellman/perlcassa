@@ -48,6 +48,9 @@ sub get_cassandra_nodes() {
 
 		eval {
 			$transport->open();
+
+ 			# Authenticate the client
+			authenticate($client, $self->{credentials}{username}, $self->{credentials}{password});
 		};
 
 		if ($@) {
@@ -88,6 +91,28 @@ sub get_cassandra_nodes() {
 	}
 
 	return %cass_hosts;
+}
+
+=item authenticate
+authenticate the client
+=cut
+sub authenticate {
+	my ($client, $username, $password) = @_;
+	if ($username and $password) {
+		eval {
+			my $auth = Cassandra::AuthenticationRequest->new( {
+				credentials =>
+				{
+					username => $username,
+					password => $password
+				}
+			} );
+			$client->login($auth);
+		};
+		if ($@) {
+			print STDERR "Failed to authenticate ";
+		}
+	};
 }
 
 =item generate_server_list
@@ -288,6 +313,9 @@ sub setup() {
 
 			eval {
 				$self->{transport}->open();
+
+				# Authenticate the client
+				authenticate( $self->{client}, $self->{credentials}{username}, $self->{credentials}{password} );
 			};
 
 			if ($@) {

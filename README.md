@@ -25,10 +25,16 @@ perlcassa can be installed by doing the usual:
         'seed_nodes' => ['host1.cassandra.local',
                      'host2.cassandra.local',
                      'host3.cassandra.local'],
-        #optional
+        # optional
         'write_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
         'read_consistency_level' => Cassandra::ConsistencyLevel::QUORUM,
-        'port' => '9160'
+        'port' => '9160',
+        
+        # authentication
+        'credentials' => {
+           'username' => 'myusername',
+           'password' => 'mypassword'
+        },
     );
     
     my %composite = ('values' => ['name_pt1', 'name_pt2']);
