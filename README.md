@@ -84,7 +84,7 @@ perlcassa can be installed by doing the usual:
 
 # REQUIRES
 
-Perl5.10, Thrift::XS, Time::HiRes 
+Perl5.10, Thrift::XS, Time::HiRes, UUID::Tiny, Socket6
 
 # DESCRIPTION
 
